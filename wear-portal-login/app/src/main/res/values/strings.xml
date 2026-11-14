@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Portal Login</string>
+    <string name="waiting_wifi">Waiting for Wi-Fi…</string>
+    <string name="wifi_settings">Wi-Fi settings</string>
+    <string name="no_wifi">No Wi-Fi</string>
+    <string name="checking">Checking…</string>
+    <string name="portal">Portal</string>
+    <string name="online">Online ✓</string>
+    <string name="online_banner">Online ✓ — you can close this</string>
+    <string name="browse_anyway">Browse anyway</string>
+    <string name="probe_error">Could not reach the network: %1$s</string>
+    <string name="retry">Retry</string>
+    <string name="webview_missing">The system WebView is missing or disabled on this watch, so pages cannot be shown.</string>
+    <string name="btn_back">Back</string>
+    <string name="btn_reload">Reload</string>
+    <string name="btn_check">Check</string>
+    <string name="btn_fit">Fit</string>
+    <string name="btn_url">URL</string>
+    <string name="url_dialog_title">Open address</string>
+    <string name="open">Open</string>
+    <string name="cancel">Cancel</string>
+    <string name="continue_label">Continue</string>
+    <string name="ssl_message">Certificate problem for %1$s. Continue?</string>
+    <string name="page_error">Page failed to load: %1$s</string>
+</resources>
