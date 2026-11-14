@@ -166,7 +166,7 @@ public class Main {
 
     private static int doStart(Object tm) {
         stage("build TetheringRequest");
-        Object request;
+        Object request = null;
         try {
             Class<?> bClass = Class.forName("android.net.TetheringManager$TetheringRequest$Builder");
             Constructor<?> bc = bClass.getDeclaredConstructor(int.class);
@@ -191,7 +191,7 @@ public class Main {
             System.out.println("OK: request=" + request);
         } catch (Throwable t) {
             printFailure("build TetheringRequest", t);
-            return 1;
+            request = null;
         }
 
         stage("startTethering");
@@ -199,7 +199,27 @@ public class Main {
         final int[] result = {Integer.MIN_VALUE}; // MIN_VALUE = none, -1 = started, >=0 error
         try {
             Class<?> cbClass = Class.forName("android.net.TetheringManager$StartTetheringCallback");
-            Method start = findMethod(tm.getClass(), "startTethering", 3);
+            Method start = null;
+            Object firstArg = null;
+            if (request != null) {
+                start = findStart(tm.getClass(), request.getClass(), cbClass);
+                if (start == null) {
+                    start = findStart(tm.getClass(),
+                            Class.forName("android.net.TetheringManager$TetheringRequest"), cbClass);
+                }
+                if (start != null) {
+                    firstArg = request;
+                    System.out.println("using TetheringRequest overload");
+                }
+            }
+            if (start == null) {
+                start = findStart(tm.getClass(), int.class, cbClass);
+                if (start != null) {
+                    firstArg = TETHERING_WIFI;
+                    System.out.println((request == null ? "request build failed; " : "TetheringRequest overload not found; ")
+                            + "using int overload with type=" + TETHERING_WIFI);
+                }
+            }
             if (start == null) {
                 System.out.println("startTethering with 3 args not found; TetheringManager methods containing \"ether\":");
                 for (Method m : tm.getClass().getDeclaredMethods()) {
@@ -238,7 +258,7 @@ public class Main {
                 }
             };
             start.setAccessible(true);
-            start.invoke(tm, request, direct, cb);
+            start.invoke(tm, firstArg, direct, cb);
             System.out.println("startTethering invoked, waiting up to 20s for callback...");
             boolean got = latch.await(20, TimeUnit.SECONDS);
             int r = result[0];
@@ -384,6 +404,19 @@ public class Main {
     private static void printFailure(String stage, Throwable t) {
         System.out.println("FAILED at STAGE: " + stage);
         unwrap(t).printStackTrace(System.out);
+    }
+
+    private static Method findStart(Class<?> c, Class<?> first, Class<?> cbClass) {
+        for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+            for (Method m : k.getDeclaredMethods()) {
+                Class<?>[] p = m.getParameterTypes();
+                if (m.getName().equals("startTethering") && p.length == 3
+                        && p[0] == first && p[2] == cbClass) {
+                    return m;
+                }
+            }
+        }
+        return null;
     }
 
     private static Method findMethod(Class<?> c, String name, int params) {
