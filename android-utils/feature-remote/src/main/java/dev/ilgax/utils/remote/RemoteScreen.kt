@@ -103,6 +103,11 @@ fun RemoteScreen(
 
         SlotsGroup(state.slots, actions)
 
+        dev.ilgax.utils.remote.macros.MacroSection(
+            state.macros, state.runs, state.runningMacro,
+            onRun = actions.onRunMacro, onEdit = actions.onEditMacro, onAdd = actions.onAddMacro,
+        )
+
         SettingsGroup(title = stringResource(R.string.remote_group_test)) {
             Text(
                 stringResource(R.string.remote_test_hint),

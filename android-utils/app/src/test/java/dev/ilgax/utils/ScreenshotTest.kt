@@ -2,6 +2,7 @@ package dev.ilgax.utils
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -166,6 +167,42 @@ class ScreenshotTest {
                 androidx.compose.foundation.layout.Column(Modifier.padding(top = 16.dp)) {
                     PairingPanel(PairingStep.Code("482 913", 87, false), {}, {}, {})
                 }
+            }
+        }
+    }
+
+    // ---- Macros ----
+
+    @Test
+    @Config(qualifiers = "w411dp-h2300dp-xhdpi")
+    fun macrosSectionPhoneLight() = shot(
+        "20-macros-section-phone-light", false,
+        detailPage(Fixtures.remote(remoteCardOn, Fixtures.remoteMacros)),
+    )
+
+    @Test
+    @Config(qualifiers = "w411dp-h1500dp-xhdpi")
+    fun macroEditorPhoneLight() = shot("21-macro-editor-phone-light", false, detailPage(Fixtures.macroEditor(remoteCardOn)))
+
+    @Test
+    @Config(qualifiers = "w411dp-h1500dp-night-xhdpi")
+    fun macroEditorPhoneDark() = shot("22-macro-editor-phone-dark", true, detailPage(Fixtures.macroEditor(remoteCardOn)))
+
+    /** The sheet content on a dimmed editor (Robolectric cannot capture the sheet's own window). */
+    @Test
+    @Config(qualifiers = "w411dp-h1500dp-xhdpi")
+    fun addStepPickerPhoneLight() = shot("23-macro-add-step-phone-light", false) {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            detailPage(Fixtures.macroEditor(remoteCardOn)).invoke()
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)),
+            )
+            androidx.compose.material3.Surface(
+                modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.85f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                androidx.compose.foundation.layout.Column(Modifier.padding(top = 16.dp)) { Fixtures.addStepPanel().invoke() }
             }
         }
     }

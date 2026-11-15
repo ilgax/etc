@@ -15,6 +15,8 @@ import android.os.HandlerThread
 import dev.ilgax.tabremote.protocol.AppSlots
 import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.CommandFrame
+import dev.ilgax.tabremote.protocol.MacroList
+import dev.ilgax.utils.remote.macros.MacroEngine
 import dev.ilgax.tabremote.protocol.OfferFrame
 import dev.ilgax.tabremote.protocol.Protocol
 import dev.ilgax.tabremote.protocol.Status
@@ -48,6 +50,10 @@ class GattController(
     private val offerGrants = HashMap<String, ByteArray>()
     private val offerSnapshots = HashMap<String, ByteArray>()
     private val offerSubscribers = HashSet<String>()
+    /** SYNC_MACROS grants: one authenticated read of MACROS, bound to the granting frame's nonce and the page it asked for. */
+    private class MacroGrant(val nonce: ByteArray, val page: Int)
+    private val macroGrants = HashMap<String, MacroGrant>()
+    private val macroSnapshots = HashMap<String, ByteArray>()
     private var offerChar: BluetoothGattCharacteristic? = null
     private val failures = HashMap<String, Int>()
     private val lockedUntil = HashMap<String, Long>()
@@ -74,6 +80,7 @@ class GattController(
             devices.clear(); nonces.clear(); mtus.clear(); pairBuffers.clear()
             appsGrants.clear(); appsSnapshots.clear()
             offerGrants.clear(); offerSnapshots.clear(); offerSubscribers.clear()
+            macroGrants.clear(); macroSnapshots.clear()
         }
     }
 
@@ -85,7 +92,22 @@ class GattController(
             for (addr in offerSubscribers.toList()) {
                 val device = devices[addr] ?: continue
                 try {
-                    s.notifyCharacteristicChanged(device, ch, false, byteArrayOf(1))
+                    s.notifyCharacteristicChanged(device, ch, false, byteArrayOf(Protocol.PING_OFFER))
+                } catch (_: SecurityException) {
+                }
+            }
+        }
+    }
+
+    /** Content-free ping on the same channel: "the macro list changed". Old watches just treat it as an offer check. */
+    fun notifyMacros() {
+        handler.post {
+            val s = server ?: return@post
+            val ch = offerChar ?: return@post
+            for (addr in offerSubscribers.toList()) {
+                val device = devices[addr] ?: continue
+                try {
+                    s.notifyCharacteristicChanged(device, ch, false, byteArrayOf(Protocol.PING_MACROS))
                 } catch (_: SecurityException) {
                 }
             }
@@ -127,6 +149,9 @@ class GattController(
         )
         svc.addCharacteristic(offer)
         offerChar = offer
+        svc.addCharacteristic(
+            BluetoothGattCharacteristic(Protocol.MACROS_UUID, BluetoothGattCharacteristic.PROPERTY_READ, read),
+        )
         return svc
     }
 
@@ -145,6 +170,7 @@ class GattController(
                     devices.remove(addr); nonces.remove(addr); mtus.remove(addr)
                     pairBuffers.remove(addr); appsGrants.remove(addr); appsSnapshots.remove(addr)
                     offerGrants.remove(addr); offerSnapshots.remove(addr); offerSubscribers.remove(addr)
+                    macroGrants.remove(addr); macroSnapshots.remove(addr)
                     if (newState == BluetoothProfile.STATE_DISCONNECTED) onReady() // re-assert advertising
                 }
             }
@@ -261,6 +287,27 @@ class GattController(
                 val chunk = (mtus[addr] ?: DEFAULT_MTU) - 1
                 if (offset + chunk >= payload.size) offerSnapshots.remove(addr)
             }
+            Protocol.MACROS_UUID -> {
+                // Only after an authenticated SYNC_MACROS; the tag binds the page to that frame's nonce.
+                val payload: ByteArray? = if (offset == 0) {
+                    macroGrants.remove(addr)?.let { grant ->
+                        val mac: (ByteArray) -> ByteArray = { vault.mac(it) ?: throw IllegalStateException("no key") }
+                        try {
+                            val (version, items) = MacroEngine.get(context).store.watchView()
+                            MacroList.encode(mac, grant.nonce, version, items, grant.page)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }?.also { macroSnapshots[addr] = it }
+                } else macroSnapshots[addr]
+                if (payload == null) {
+                    respond(device, requestId, Status.AUTH_FAILED.code, offset, null)
+                    return
+                }
+                respondSlice(device, requestId, offset, payload)
+                val chunk = (mtus[addr] ?: DEFAULT_MTU) - 1
+                if (offset + chunk >= payload.size) macroSnapshots.remove(addr)
+            }
             else -> respond(device, requestId, BluetoothGatt.GATT_READ_NOT_PERMITTED, offset, null)
         }
     }
@@ -345,6 +392,9 @@ class GattController(
                 val status = executor.execute(r.command, r.args)
                 if (r.command == Command.SYNC_APPS && status == Status.SUCCESS) appsGrants.add(addr)
                 if (r.command == Command.GET_OFFER && status == Status.SUCCESS) offerGrants[addr] = nonce
+                if (r.command == Command.SYNC_MACROS && status == Status.SUCCESS) {
+                    MacroList.decodePageArgs(r.args)?.let { macroGrants[addr] = MacroGrant(nonce, it) }
+                }
                 status
             }
         }

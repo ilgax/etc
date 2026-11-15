@@ -157,6 +157,9 @@ class RemoteService : Service() {
     /** Pings subscribed watches that an update offer is available (they then fetch it authenticated). */
     fun notifyOffer() = gatt.notifyOffer()
 
+    /** Pings subscribed watches that the macro list changed (they then sync it authenticated). */
+    fun notifyMacros() = gatt.notifyMacros()
+
     private fun notifyForeground() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }

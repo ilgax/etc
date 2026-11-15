@@ -2,6 +2,9 @@ package dev.ilgax.utils.remote
 
 import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.Status
+import dev.ilgax.utils.remote.macros.MacroUi
+import dev.ilgax.utils.remote.macros.RunRecord
+import dev.ilgax.utils.remote.macros.RunningMacro
 
 data class SlotUi(val label: String, val packageName: String)
 
@@ -31,6 +34,10 @@ data class RemoteUiState(
     /** True when Shizuku is ready, i.e. closing apps will force-stop them. */
     val forceStop: Boolean,
     val watchApp: WatchAppUi? = null,
+    val macros: List<MacroUi> = emptyList(),
+    /** Newest first. */
+    val runs: List<RunRecord> = emptyList(),
+    val runningMacro: RunningMacro? = null,
 )
 
 /** What the pairing sheet is showing. */
@@ -54,6 +61,9 @@ class RemoteActions(
     val loadApps: suspend () -> List<AppCatalog.App> = { emptyList() },
     val onUpdateWatch: () -> Unit = {},
     val onCancelUpdate: () -> Unit = {},
+    val onRunMacro: (Int) -> Unit = {},
+    val onAddMacro: () -> Unit = {},
+    val onEditMacro: (Int) -> Unit = {},
 )
 
 internal fun statusTextRes(s: Status): Int = when (s) {

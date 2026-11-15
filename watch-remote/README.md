@@ -16,7 +16,7 @@ Modules
 ./gradlew --no-daemon :protocol:test :tablet:assembleDebug :wear:assembleDebug :tablet:lintDebug :wear:lintDebug
 ```
 
-APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist/tab-remote-watch-0.2.1-debug.apk` (watch). `local.properties` must contain `sdk.dir=/opt/android-sdk` (or your SDK path).
+APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist/tab-remote-watch-0.3.0-debug.apk` (watch). `local.properties` must contain `sdk.dir=/opt/android-sdk` (or your SDK path).
 
 ## Install
 
@@ -25,7 +25,7 @@ APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist
   ```
   adb pair <ip>:<pairing-port>        # enter the pairing code shown on the watch
   adb connect <ip>:<port>
-  adb install -r dist/tab-remote-watch-0.2.1-debug.apk
+  adb install -r dist/tab-remote-watch-0.3.0-debug.apk
   ```
 
 ## First-time setup on the tablet
@@ -81,7 +81,7 @@ Utils (`android-utils`, `:feature-remote`) bundles this watch APK and can push i
 
 One-time setup (adb, wireless debugging on the watch):
 ```
-adb install -r dist/tab-remote-watch-0.2.1-debug.apk
+adb install -r dist/tab-remote-watch-0.3.0-debug.apk
 adb shell appops set dev.ilgax.tabremote.wear REQUEST_INSTALL_PACKAGES allow
 ```
 The second command allows Tab Remote to install packages; without it the watch shows this exact command instead of installing.
@@ -89,6 +89,16 @@ The second command allows Tab Remote to install packages; without it the watch s
 Flow: open Tab Remote on the watch (it reports its versionCode with HELLO), then in Utils > Watch remote > Watch app tap "Update watch app". Utils starts a one-shot HTTP server (random token path, stops after one full download or 10 min) and offers it over BLE (GET_OFFER, then a long read of the OFFER characteristic, HMAC-authenticated and bound to that frame's nonce). The watch asks Android for a Wi-Fi network, downloads from the offered tablet addresses, checks the SHA-256 from the authenticated offer, and installs with PackageInstaller (same signing key required, so the APK is signed with `keystore/debug.keystore`). If the tap was under 3 minutes ago and Tab Remote is open it starts by itself; otherwise the app shows "Update to vN". The watch must be on the tablet's hotspot or the same Wi-Fi.
 
 New commands: HELLO (10, 3 arg bytes versionCode), GET_OFFER (11), UPDATE_STATE (12, phase + value). Old peers answer 0x06, which is handled. OFFER characteristic `9c4e7a12-3b58-4f6d-8e21-6a0d5b7c9f34` (read + notify; the notification is a content-free ping).
+
+## Macros (0.3.0)
+
+Macros are configured in Utils on the tablet; the watch lists their names (below the app slots, with "Add macros in Utils on your tablet" when there are none) and starts one by id. The section is hidden when the tablet's Utils predates macros.
+
+- RUN_MACRO (13): 3 arg bytes, the macro id big-endian. The tablet answers as soon as the macro is accepted and started (SUCCESS = "started"), not when it ends. New status `MACRO_BUSY` 0x97 (another macro is running; the watch shows "Busy") and `MACRO_NOT_FOUND` 0x98 (unknown id or a macro with no steps). Other failures during the run are reported on the tablet (notification), not to the watch.
+- SYNC_MACROS (14): 2 arg bytes, the page index. Grants one authenticated read of the MACROS characteristic `e1c2a7d4-5b39-4a86-bd10-72f3c8a94e55`, exactly like GET_OFFER / OFFER: tag = HMAC-SHA256(key, "mcl" | nonce | body) bound to that frame's nonce.
+- Page body: `format(1) | version(4) | total(4) | page(2) | n(1) | n * (id(3) | nameLen(1) | name UTF-8) | hasMore(1)`, tag 32 bytes, at most 480 bytes. The list is unlimited; the watch pages until `hasMore` is 0 (capped at 400 pages). `version` changes with every edit in Utils, so the watch stops after page 0 when it already holds that version. The list is cached on the watch.
+- Edits on the tablet ping subscribed watches on the OFFER notification channel (first byte 2 = macros changed; 1 = update offer); an old watch just treats it as an offer check.
+- Compatibility: an old watch never sends these; a new watch with an old Utils finds no MACROS characteristic (or gets 0x06) and hides the section. Android may cache the old GATT table of a bonded device until Bluetooth is toggled.
 
 ## Security model
 

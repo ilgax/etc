@@ -45,4 +45,6 @@ dependencies {
     implementation(libs.hiddenapibypass)
 
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.json)
 }

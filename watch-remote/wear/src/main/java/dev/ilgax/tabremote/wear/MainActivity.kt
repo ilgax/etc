@@ -67,13 +67,16 @@ class MainActivity : Activity() {
         // Opening the app is the moment the watch tells the tablet its version and picks up an update offer.
         client.setForeground(true)
         client.onUpdateHint = { checkForUpdate() }
+        client.onMacrosHint = { syncMacros() }
         updater.listener = { render(); launchPendingConfirm() }
         checkForUpdate()
+        syncMacros()
     }
 
     override fun onStop() {
         updater.listener = null
         client.onUpdateHint = null
+        client.onMacrosHint = null
         client.setForeground(false)
         super.onStop()
     }
@@ -153,9 +156,25 @@ class MainActivity : Activity() {
                 pill(text) { run(if (switching) Command.SWITCH_APP else Command.OPEN_APP, i, label) }
             }
         }
+        renderMacros()
         pill(R.string.btn_sync) { sync() }
         pill(R.string.btn_repair) { beginPairing() }
         versionLabel()
+    }
+
+    /** Hidden entirely unless the tablet's Utils answered a macro sync. */
+    private fun renderMacros() {
+        if (prefs.macrosSupported != true) return
+        content.addView(TextView(this).apply {
+            text = getString(R.string.macros_title)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF78909C.toInt())
+            setPadding(0, dp(12), 0, dp(4))
+        })
+        val macros = prefs.macros
+        if (macros.isEmpty()) info(R.string.macros_empty)
+        for (m in macros) pill(m.name) { runMacro(m.id, m.name) }
     }
 
     private fun renderUpdate() {
@@ -228,6 +247,48 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun runMacro(id: Int, name: String) = withPermissions {
+        setStatus(getString(R.string.status_sending))
+        client.runMacro(id) { r ->
+            if (isDestroyed) return@runMacro
+            val text = ResultText.describe(this, r, Command.RUN_MACRO)
+            setStatus(text)
+            // The status line is at the top of a long list, so say it where the finger is too.
+            android.widget.Toast.makeText(this, "$name: $text", android.widget.Toast.LENGTH_SHORT).show()
+            if (r == Result.SUCCESS) Haptics.success(this) else Haptics.failure(this)
+            if (r == Result.MACRO_NOT_FOUND) syncMacros()
+        }
+    }
+
+    /** Silent housekeeping like [checkForUpdate]: fetches the macro list only when the tablet's version differs. */
+    private fun syncMacros() {
+        if (!client.isPaired || !hasPermissions()) return
+        client.syncMacros(prefs.macroVersion) { result ->
+            if (isDestroyed) return@syncMacros
+            var changed = false
+            when (result) {
+                is MacroSync.Updated -> {
+                    changed = prefs.macros != result.items || prefs.macrosSupported != true
+                    prefs.macros = result.items
+                    prefs.macroVersion = result.version
+                    prefs.macrosSupported = true
+                }
+                MacroSync.Unchanged -> {
+                    changed = prefs.macrosSupported != true
+                    prefs.macrosSupported = true
+                }
+                MacroSync.Unsupported -> {
+                    changed = prefs.macrosSupported != false
+                    prefs.macrosSupported = false
+                    prefs.macros = emptyList()
+                    prefs.macroVersion = null
+                }
+                is MacroSync.Failed -> Unit
+            }
+            if (changed && mode == Mode.LIST) render()
+        }
+    }
+
     private fun sync() = withPermissions {
         setStatus(getString(R.string.status_syncing))
         client.syncApps { r ->
@@ -267,7 +328,7 @@ class MainActivity : Activity() {
                 else ResultText.describe(this@MainActivity, result, null)
                 if (result == Result.SUCCESS) Haptics.success(this@MainActivity) else Haptics.failure(this@MainActivity)
                 render()
-                if (result == Result.SUCCESS) checkForUpdate()
+                if (result == Result.SUCCESS) { checkForUpdate(); syncMacros() }
             }
         })
     }

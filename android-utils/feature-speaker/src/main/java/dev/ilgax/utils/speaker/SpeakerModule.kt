@@ -46,6 +46,7 @@ class SpeakerModule(context: Context) : UtilModule {
     init {
         // Prime the enabled flow from preferences and finish any release that was waiting for Shizuku.
         SpeakerController.isEnabled(app)
+        dev.ilgax.utils.core.action.ActionRegistry.shared.register(SpeakerMacroActions)
         SpeakerController.retryPendingRelease(app)
     }
 

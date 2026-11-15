@@ -143,6 +143,8 @@ fun AppPickerSheet(
     loadApps: suspend () -> List<AppCatalog.App>,
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Replaces the default "App for slot N" heading. */
+    title: String? = null,
 ) {
     val apps by produceState<List<AppCatalog.App>?>(null) { value = loadApps() }
     var query by rememberSaveable { mutableStateOf("") }
@@ -152,7 +154,7 @@ fun AppPickerSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(Modifier.fillMaxHeight(0.9f).imePadding().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.remote_choose_app_title, slot + 1), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
+            Text(title ?: stringResource(R.string.remote_choose_app_title, slot + 1), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },

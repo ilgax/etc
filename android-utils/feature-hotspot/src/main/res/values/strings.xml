@@ -78,4 +78,9 @@
     <string name="hotspot_settings_unavailable">Not available on this device</string>
 
     <string name="hotspot_footnote">Starts the tablet\'s Wi-Fi hotspot through the system tethering service. Needs Shizuku running.</string>
+    <string name="hotspot_action_on">Hotspot on</string>
+    <string name="hotspot_action_off">Hotspot off</string>
+    <string name="hotspot_action_toggle">Toggle hotspot</string>
+    <string name="hotspot_action_shizuku">Shizuku is not ready</string>
+    <string name="hotspot_action_error">Hotspot: %1$s</string>
 </resources>

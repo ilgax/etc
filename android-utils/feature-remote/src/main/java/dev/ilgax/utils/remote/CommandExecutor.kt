@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import dev.ilgax.tabremote.protocol.Command
+import dev.ilgax.tabremote.protocol.MacroList
+import dev.ilgax.utils.remote.macros.MacroEngine
 import dev.ilgax.tabremote.protocol.Status
 import dev.ilgax.tabremote.protocol.UpdateCodec
 import dev.ilgax.tabremote.protocol.UpdateReport
@@ -24,6 +26,9 @@ class CommandExecutor(context: Context, private val killer: AppKiller = AppKille
     fun execute(command: Command, args: ByteArray = ByteArray(0)): Status = try {
         when (command) {
             Command.PING, Command.SYNC_APPS, Command.GET_OFFER -> Status.SUCCESS // GET_OFFER's grant is handled by the GATT server
+            // The grant is handled by the GATT server; only the page index is checked here.
+            Command.SYNC_MACROS -> if (MacroList.decodePageArgs(args) != null) Status.SUCCESS else Status.FAILED
+            Command.RUN_MACRO -> MacroList.decodeId(args)?.let { MacroEngine.get(context).runFromWatch(it) } ?: Status.FAILED
             Command.HELLO -> UpdateCodec.decodeVersion(args)?.let { UpdateHost.get(context).onHello(it); Status.SUCCESS } ?: Status.FAILED
             Command.UPDATE_STATE -> UpdateReport.decode(args)?.let { UpdateHost.get(context).onReport(it); Status.SUCCESS } ?: Status.FAILED
             Command.LOCK -> lock()

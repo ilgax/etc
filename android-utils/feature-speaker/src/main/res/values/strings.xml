@@ -32,4 +32,8 @@
     <string name="speaker_shizuku_permission">Permission needed</string>
 
     <string name="speaker_footnote">Only media volume is pinned; alarms, ring and calls can still use the speaker. This is a software block, so a Buds disconnect may leak a moment of audio. Restart Shizuku after every reboot; until then only the volume fallback runs.</string>
+    <string name="speaker_action_on">Speaker kill switch on</string>
+    <string name="speaker_action_off">Speaker kill switch off</string>
+    <string name="speaker_action_toggle">Toggle speaker kill switch</string>
+    <string name="speaker_action_shizuku">Shizuku is not ready</string>
 </resources>

@@ -22,6 +22,8 @@ object ResultText {
             Result.NOTHING_TO_CLOSE -> R.string.res_nothing_to_close
             Result.SLOT_EMPTY -> R.string.res_slot_empty
             Result.APP_START_FAILED -> R.string.res_app_start_failed
+            Result.MACRO_BUSY -> R.string.res_macro_busy
+            Result.MACRO_NOT_FOUND -> R.string.res_macro_not_found
             Result.UNKNOWN_COMMAND, Result.FAILED, Result.UNKNOWN -> R.string.res_failed
         }
         return context.getString(res)
@@ -30,6 +32,7 @@ object ResultText {
     private fun success(context: Context, command: Command?, label: String?): String = when (command) {
         Command.LOCK -> context.getString(R.string.res_locked)
         Command.KILL_APP -> context.getString(R.string.res_closed)
+        Command.RUN_MACRO -> context.getString(R.string.res_macro_started)
         Command.OPEN_APP -> label?.let { context.getString(R.string.res_opened, it) } ?: context.getString(R.string.res_done)
         Command.SWITCH_APP -> label?.let { context.getString(R.string.res_switched, it) } ?: context.getString(R.string.res_done)
         else -> context.getString(R.string.res_done)

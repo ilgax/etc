@@ -63,6 +63,6 @@ class CommandActivity : Activity() {
     companion object {
         const val EXTRA_CMD = "cmd"
         const val EXTRA_ARG = "arg"
-        private val ALLOWED = Command.entries.toSet() - setOf(Command.PING, Command.SYNC_APPS, Command.HELLO, Command.GET_OFFER, Command.UPDATE_STATE)
+        private val ALLOWED = Command.entries.toSet() - setOf(Command.PING, Command.SYNC_APPS, Command.HELLO, Command.GET_OFFER, Command.UPDATE_STATE, Command.RUN_MACRO, Command.SYNC_MACROS)
     }
 }

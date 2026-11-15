@@ -22,6 +22,11 @@ class HotspotModule(context: Context) : UtilModule {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override val id = "hotspot"
+
+    init {
+        dev.ilgax.utils.core.action.ActionRegistry.shared.register(HotspotActions(app))
+    }
+
     override val title: String = app.getString(R.string.hotspot_title)
     override val summary: String = app.getString(R.string.hotspot_summary)
     override val iconRes = R.drawable.ic_wifi_tethering

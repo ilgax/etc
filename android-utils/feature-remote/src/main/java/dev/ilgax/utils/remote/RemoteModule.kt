@@ -25,6 +25,7 @@ class RemoteModule(context: Context) : UtilModule {
 
     init {
         dev.ilgax.utils.core.a11y.A11y.register(RemoteA11y)
+        dev.ilgax.utils.core.action.ActionRegistry.shared.register(RemoteMacroActions(app))
         // Lives as long as the process, like the module itself.
         RemoteState.addListener { _cardState.value = compute() }
     }

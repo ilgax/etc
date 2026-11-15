@@ -27,6 +27,17 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import dev.ilgax.tabremote.protocol.Protocol
+import dev.ilgax.utils.core.action.AndroidRequirementEnv
+import dev.ilgax.utils.core.action.RequirementChecker
+import dev.ilgax.utils.core.action.RequirementFix
+import dev.ilgax.utils.remote.macros.MacroDraft
+import dev.ilgax.utils.remote.macros.MacroEditor
+import dev.ilgax.utils.remote.macros.MacroEditorActions
+import dev.ilgax.utils.remote.macros.MacroEngine
+import dev.ilgax.utils.remote.macros.MacroSummary
+import dev.ilgax.utils.remote.macros.MacroUi
+import dev.ilgax.utils.remote.macros.Origin
+import dev.ilgax.utils.remote.macros.TriggerResult
 import dev.ilgax.utils.core.shizuku.ShizukuState
 import dev.ilgax.utils.core.shizuku.ShizukuStatus
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +75,14 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
     }
 
     val shizuku by ShizukuState.status.collectAsStateWithLifecycle()
-    val state = remember(tick, shizuku) {
+    val engine = remember { MacroEngine.get(context) }
+    val macroData by engine.store.state.collectAsStateWithLifecycle()
+    val runs by engine.log.runs.collectAsStateWithLifecycle()
+    val running by engine.runner.running.collectAsStateWithLifecycle()
+    val checker = remember { RequirementChecker(AndroidRequirementEnv(context)) }
+    /** Working copy and the version it started from, while the macro editor is open. */
+    var editing by remember { mutableStateOf<Pair<MacroDraft, MacroDraft>?>(null) }
+    val state = remember(tick, shizuku, macroData, runs, running) {
         RemoteUiState(
             service = RemoteState.service,
             serviceDetail = RemoteState.serviceDetail,
@@ -81,6 +99,9 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
                     UpdateHost.stateOf(updates.snapshot(), System.currentTimeMillis()),
                 )
             },
+            macros = macroData.macros.map { MacroUi(it.id, it.name, it.steps.size, MacroSummary.of(context, engine.registry, it)) },
+            runs = runs,
+            runningMacro = running,
         )
     }
 
@@ -126,6 +147,21 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
                 }
             },
             onCancelUpdate = { updates.stop(); tick++ },
+            onAddMacro = { MacroDraft.blank().let { editing = it to it } },
+            onEditMacro = { id -> engine.store.get(id)?.let { m -> MacroDraft.of(m).let { editing = it to it } } },
+            onRunMacro = { id ->
+                val macro = engine.store.get(id)
+                if (macro != null) {
+                    // A "close current app" step would otherwise close this app: give time to switch away.
+                    val delayMs = if (macro.steps.any { it.actionId == "remote.close_app" }) 3_000L else 0L
+                    val message = when (engine.runner.trigger(macro, Origin.Local, delayMs)) {
+                        TriggerResult.Started -> if (delayMs > 0) R.string.macro_started_delayed else R.string.macro_started
+                        TriggerResult.Busy -> R.string.macro_busy
+                        is TriggerResult.Invalid -> R.string.macro_invalid
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
+            },
             runCommand = { command, args -> executor.execute(command, args) },
             loadApps = { withContext(Dispatchers.IO) { AppCatalog.launchableApps(context) } },
         )
@@ -142,7 +178,49 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
         sawPairing = false
     }
 
-    RemoteScreen(state, actions, contentPadding, modifier)
+    val edit = editing
+    if (edit != null) {
+        val editorActions = remember(context, engine) {
+            MacroEditorActions(
+                onChange = { d -> editing = editing?.let { d to it.second } },
+                onSave = {
+                    editing?.let { (d, _) ->
+                        try {
+                            engine.store.save(d.toMacro())
+                            editing = null
+                        } catch (e: IllegalStateException) {
+                            Toast.makeText(context, R.string.macro_store_readonly, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                },
+                onCancel = { editing = null },
+                onDuplicate = {
+                    editing?.let { (d, _) ->
+                        try {
+                            val saved = engine.store.save(d.toMacro())
+                            engine.store.duplicate(saved.id)
+                            editing = null
+                        } catch (e: IllegalStateException) {
+                            Toast.makeText(context, R.string.macro_store_readonly, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                },
+                onDelete = {
+                    editing?.let { (d, _) -> runCatching { engine.store.delete(d.id) } }
+                    editing = null
+                },
+                onFix = { kind -> RequirementFix.open(context, kind) },
+                loadApps = actions.loadApps,
+            )
+        }
+        MacroEditor(
+            draft = edit.first, original = edit.second, registry = engine.registry, checker = checker,
+            slotLabels = List(Protocol.APP_SLOTS) { AppCatalog.label(context, prefs.slot(it)) },
+            actions = editorActions, contentPadding = contentPadding, modifier = modifier, refreshKey = tick,
+        )
+    } else {
+        RemoteScreen(state, actions, contentPadding, modifier)
+    }
 
     val secondsLeft = remember(tick, state.pairing) {
         when (val p = state.pairing) {

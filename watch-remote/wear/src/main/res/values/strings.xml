@@ -74,4 +74,9 @@
     <string name="res_slot_empty">App slot not set</string>
     <string name="res_app_start_failed">Couldn\'t open app</string>
     <string name="res_failed">Failed</string>
+    <string name="res_macro_busy">Busy</string>
+    <string name="res_macro_not_found">Macro not found</string>
+    <string name="res_macro_started">Started ✓</string>
+    <string name="macros_title">Macros</string>
+    <string name="macros_empty">Add macros in Utils on your tablet</string>
 </resources>

@@ -26,6 +26,8 @@ import dev.ilgax.tabremote.protocol.AppSlots
 import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.CommandFrame
 import dev.ilgax.tabremote.protocol.Hmac
+import dev.ilgax.tabremote.protocol.MacroItem
+import dev.ilgax.tabremote.protocol.MacroList
 import dev.ilgax.tabremote.protocol.Pairing
 import dev.ilgax.tabremote.protocol.OfferFrame
 import dev.ilgax.tabremote.protocol.Protocol
@@ -44,6 +46,17 @@ sealed interface UpdateCheck {
     /** The tablet app predates the update protocol (no OFFER characteristic, or UNKNOWN_COMMAND). */
     data object Unsupported : UpdateCheck
     class Failed(val result: Result) : UpdateCheck
+}
+
+/** Outcome of [RemoteClient.syncMacros]. */
+sealed interface MacroSync {
+    /** The complete, authenticated list and its version. */
+    class Updated(val version: Int, val items: List<MacroItem>) : MacroSync
+    /** The tablet's list still has the version the watch already holds. */
+    data object Unchanged : MacroSync
+    /** The tablet's Utils predates macros (no MACROS characteristic, or UNKNOWN_COMMAND). */
+    data object Unsupported : MacroSync
+    class Failed(val result: Result) : MacroSync
 }
 
 interface PairingListener {
@@ -81,6 +94,8 @@ class RemoteClient private constructor(context: Context) {
     private var appsCh: BluetoothGattCharacteristic? = null
     /** Optional: absent on tablet apps that predate the updater. */
     private var offerCh: BluetoothGattCharacteristic? = null
+    /** Optional: absent on tablet apps without macros. */
+    private var macrosCh: BluetoothGattCharacteristic? = null
     private var notifying = false
     private var foreground = false
 
@@ -101,6 +116,9 @@ class RemoteClient private constructor(context: Context) {
 
     /** Called on the main thread when the tablet pings that an update offer is available. */
     @Volatile var onUpdateHint: (() -> Unit)? = null
+
+    /** Called on the main thread when the tablet pings that its macro list changed. */
+    @Volatile var onMacrosHint: (() -> Unit)? = null
 
     // region public API
 
@@ -177,6 +195,71 @@ class RemoteClient private constructor(context: Context) {
             }
         }
     }
+
+    /**
+     * Reads the macro list page by page (SYNC_MACROS grants one authenticated read per page, bound to that frame's nonce).
+     * Stops after page 0 when its version equals [knownVersion]. Also subscribes to the ping channel when it exists.
+     */
+    fun syncMacros(knownVersion: Int?, callback: (MacroSync) -> Unit) {
+        var outcome: MacroSync? = null
+        enqueue({ r -> callback(outcome ?: MacroSync.Failed(r)) }) {
+            withConnection(pairing = false) { err ->
+                if (err != null) return@withConnection finish(err)
+                val mCh = macrosCh
+                if (mCh == null) {
+                    outcome = MacroSync.Unsupported
+                    return@withConnection finish(Result.SUCCESS)
+                }
+                ensureMtu {
+                    val pingCh = offerCh
+                    val start = { readMacroPage(mCh, 0, knownVersion, null, ArrayList()) { outcome = it } }
+                    if (pingCh != null) subscribe(pingCh) { start() } else start()
+                }
+            }
+        }
+    }
+
+    private fun Job.readMacroPage(
+        ch: BluetoothGattCharacteristic, page: Int, known: Int?, firstVersion: Int?,
+        acc: MutableList<MacroItem>, setOutcome: (MacroSync) -> Unit,
+    ) {
+        if (page >= MacroList.MAX_PAGES) return finish(Result.FAILED)
+        arm(JOB_TIMEOUT_MS) // a long list takes several round trips
+        sendSignedWithNonce(this@RemoteClient::vaultMac, Command.SYNC_MACROS, MacroList.encodePageArgs(page)) { r, nonce ->
+            if (r == Result.UNKNOWN_COMMAND) {
+                setOutcome(MacroSync.Unsupported)
+                return@sendSignedWithNonce finish(Result.SUCCESS)
+            }
+            if (r != Result.SUCCESS || nonce == null) return@sendSignedWithNonce finish(r)
+            op(OP_TIMEOUT_MS, { read(it, ch) }) { st, value ->
+                if (st != 0 || value == null) return@op finish(mapStatus(st))
+                val parsed = try {
+                    MacroList.verify(this@RemoteClient::vaultMac, nonce, value)
+                } catch (e: Exception) {
+                    return@op finish(Result.FAILED)
+                }
+                val p = (parsed as? MacroList.Result.Valid)?.page ?: return@op finish(Result.AUTH_FAILED)
+                // A list edited between two pages changes the version: give up, the next sync starts clean.
+                if (p.page != page || (firstVersion != null && p.version != firstVersion)) return@op finish(Result.FAILED)
+                if (page == 0 && known != null && p.version == known) {
+                    setOutcome(MacroSync.Unchanged)
+                    return@op finish(Result.SUCCESS)
+                }
+                acc += p.items
+                when {
+                    p.hasMore -> readMacroPage(ch, page + 1, known, p.version, acc, setOutcome)
+                    acc.size != p.total -> finish(Result.FAILED)
+                    else -> {
+                        setOutcome(MacroSync.Updated(p.version, acc.toList()))
+                        finish(Result.SUCCESS)
+                    }
+                }
+            }
+        }
+    }
+
+    /** RUN_MACRO: SUCCESS means the tablet accepted and started it; the macro keeps running there. */
+    fun runMacro(id: Int, callback: (Result) -> Unit) = send(Command.RUN_MACRO, MacroList.encodeId(id), callback)
 
     /** Best-effort progress for the tablet's "Watch app" section; failures are ignored. */
     fun reportUpdate(report: UpdateReport) = send(Command.UPDATE_STATE, report.encode()) { }
@@ -631,7 +714,7 @@ class RemoteClient private constructor(context: Context) {
         awaiting = null
         mtuRequested = false
         connectedTabletId = null
-        nonceCh = null; commandCh = null; pairCh = null; appsCh = null; offerCh = null
+        nonceCh = null; commandCh = null; pairCh = null; appsCh = null; offerCh = null; macrosCh = null
         notifying = false
         closeGatt()
     }
@@ -672,6 +755,7 @@ class RemoteClient private constructor(context: Context) {
                 pairCh = svc?.getCharacteristic(Protocol.PAIR_UUID)
                 appsCh = svc?.getCharacteristic(Protocol.APPS_UUID)
                 offerCh = svc?.getCharacteristic(Protocol.OFFER_UUID)
+                macrosCh = svc?.getCharacteristic(Protocol.MACROS_UUID)
                 if (nonceCh == null || commandCh == null || pairCh == null || appsCh == null) {
                     return@post connectFinish(Result.CONNECT_FAILED, teardown = true)
                 }
@@ -705,16 +789,19 @@ class RemoteClient private constructor(context: Context) {
         }
 
         // The ping carries no data on purpose: the offer itself is only ever read after an authenticated GET_OFFER.
-        override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) = hint(g, ch)
+        override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) = hint(g, ch, value.firstOrNull())
 
         @Deprecated("Used below API 33")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
-            if (Build.VERSION.SDK_INT < 33) hint(g, ch)
+            @Suppress("DEPRECATION")
+            if (Build.VERSION.SDK_INT < 33) hint(g, ch, ch.value?.firstOrNull())
         }
 
-        private fun hint(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+        private fun hint(g: BluetoothGatt, ch: BluetoothGattCharacteristic, first: Byte?) {
             if (ch.uuid != Protocol.OFFER_UUID) return
-            handler.post { if (g === gatt) main.post { onUpdateHint?.invoke() } }
+            handler.post {
+                if (g === gatt) main.post { if (first == Protocol.PING_MACROS) onMacrosHint?.invoke() else onUpdateHint?.invoke() }
+            }
         }
     }
 
