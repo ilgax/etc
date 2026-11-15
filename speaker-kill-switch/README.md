@@ -23,7 +23,7 @@ Hidden APIs are called by reflection on an `IAudioService` wrapped in `ShizukuBi
 - Only `STREAM_MUSIC` is volume-pinned. Alarm, ring, call and notification streams can still use the speaker.
 - Shizuku (wireless debugging mode) must be started again after every reboot. Until then only the volume-only fallback runs.
 - This is a software block, not a hardware cut. A Buds disconnect may leak a brief moment of audio before the volume is zeroed.
-- Turning OFF without Shizuku running cannot remove the routing block; start Shizuku and toggle ON then OFF.
+- Turning OFF without Shizuku running cannot remove the routing block right away; it is removed the next time the app or tile is opened with Shizuku ready.
 
 ## Build
 
