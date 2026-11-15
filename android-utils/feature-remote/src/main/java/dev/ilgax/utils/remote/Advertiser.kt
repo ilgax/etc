@@ -20,7 +20,7 @@ class Advertiser(private val adapter: BluetoothAdapter, private val onFailure: (
         try {
             val advertiser = adapter.bluetoothLeAdvertiser ?: return false
             val settings = AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
                 .setConnectable(true)
                 .setTimeout(0)

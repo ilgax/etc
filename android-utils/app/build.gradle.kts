@@ -13,8 +13,8 @@ android {
         applicationId = "dev.ilgax.utils"
         minSdk = 34
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = 5
+        versionName = "0.2.3"
         // The target tablets are arm64; keeps the ONNX Runtime native libs of other ABIs out of the APK.
         ndk { abiFilters += "arm64-v8a" }
     }

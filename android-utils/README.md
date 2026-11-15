@@ -15,7 +15,7 @@ It installs next to the older apps, but **turn the old Speaker Kill Switch OFF a
 
 ## Install and first run
 
-1. Install `dist/utils-0.2.2-debug.apk` (arm64 only) (signed with the shared debug key, so later builds update in place).
+1. Install `dist/utils-0.2.3-debug.apk` (arm64 only) (signed with the shared debug key, so later builds update in place).
 2. Start Shizuku (wireless debugging) and open Utils; use the banner to grant Shizuku permission. Allow notifications when asked.
 3. Quick Settings: edit tiles and add **Speaker kill**, **Hotspot** and **Solve**. Long-press the launcher icon for the **Speaker switch** and **Hotspot** shortcuts.
 4. Watch remote: open the module and work through Setup (Bluetooth permissions, notifications, Bluetooth on, accessibility, battery exemption). For a sideloaded app, allow restricted settings first: App info, three-dot menu. Then "Pair a watch", compare the 6-digit code with the watch, confirm on the tablet, then on the watch.
