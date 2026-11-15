@@ -12,6 +12,8 @@ enum class CardSide { Below, Above, Right, Left }
 
 data class CardPlacementResult(val x: Float, val y: Float, val side: CardSide)
 
+data class PxPoint(val x: Float, val y: Float)
+
 /** Where the result card goes relative to the circled area: the first side with room, clamped on screen. */
 object CardPlacement {
     fun place(
@@ -42,6 +44,23 @@ object CardPlacement {
         }
         return CardPlacementResult(clamp(x, margin, containerWidth - cardWidth - margin), clamp(y, margin, containerHeight - cardHeight - margin), side)
     }
+
+    /**
+     * [place] for a container that does not start at (0, 0), e.g. the usable part of the screen between the
+     * system bars. [anchor] and the result are in the same (screen) coordinates as [bounds].
+     */
+    fun placeIn(anchor: PxRect, bounds: PxRect, cardWidth: Float, cardHeight: Float, margin: Float, gap: Float): CardPlacementResult {
+        val local = PxRect(anchor.left - bounds.left, anchor.top - bounds.top, anchor.right - bounds.left, anchor.bottom - bounds.top)
+        val p = place(local, bounds.width, bounds.height, cardWidth, cardHeight, margin, gap)
+        return p.copy(x = p.x + bounds.left, y = p.y + bounds.top)
+    }
+
+    /** Where a dragged (or keyboard-shifted) card of the given size may sit: fully inside [bounds] minus [margin]. */
+    fun clampInto(x: Float, y: Float, cardWidth: Float, cardHeight: Float, bounds: PxRect, margin: Float): PxPoint =
+        PxPoint(
+            clamp(x, bounds.left + margin, bounds.right - cardWidth - margin),
+            clamp(y, bounds.top + margin, bounds.bottom - cardHeight - margin),
+        )
 
     private fun clamp(v: Float, lo: Float, hi: Float) = if (hi < lo) lo else v.coerceIn(lo, hi)
 }

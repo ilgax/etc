@@ -2,10 +2,12 @@ package dev.ilgax.utils.math
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import dev.ilgax.utils.math.recognition.InstalledModel
 import dev.ilgax.utils.math.recognition.ModelManifest
 import dev.ilgax.utils.math.recognition.ModelStore
 import dev.ilgax.utils.math.recognition.Recognition
+import dev.ilgax.utils.math.recognition.RunnerOptions
 import dev.ilgax.utils.math.recognition.VedRunner
 import dev.ilgax.utils.math.recognition.toPixelImage
 import kotlinx.coroutines.CoroutineScope
@@ -24,8 +26,8 @@ import java.io.File
 
 /**
  * Model files on disk (the bundled model is copied out of the APK assets once) and the warm ONNX session.
- * The session is created on demand, kept while the overlay is open ([hold]/[unhold]) and released
- * [IDLE_MS] after the last use.
+ * Process-wide: the session is created on demand (and warmed with a dummy run) as soon as a Solve starts
+ * ([hold]), outlives the Solve activity and is released [IDLE_MS] after the last use.
  */
 class Recognizer private constructor(context: Context) {
     private val app = context.applicationContext
@@ -90,10 +92,26 @@ class Recognizer private constructor(context: Context) {
         prefs.setSelectedModel(id)
     }
 
-    /** Keep the session alive while the overlay is open and load it in the background. */
-    fun hold() {
+    /**
+     * Keep the session alive while the overlay is open; creates and warms it in the background, in parallel
+     * with the Air Command close delay and the capture. Marks [Stage.SessionReady] on [timings].
+     */
+    fun hold(timings: SolveTimings? = null) {
         synchronized(this) { holders++; idleJob?.cancel() }
-        scope.launch { runCatching { mutex.withLock { ensureRunner() } } }
+        scope.launch {
+            runCatching {
+                mutex.withLock {
+                    val fresh = runner == null
+                    val r = ensureRunner()
+                    timings?.mark(Stage.SessionReady)
+                    if (fresh) {
+                        val t = System.nanoTime()
+                        r.warmUp()
+                        Log.i(SolveTimings.TAG, "model warm-up ${(System.nanoTime() - t) / 1_000_000} ms")
+                    }
+                }
+            }.onFailure { Log.w(SolveTimings.TAG, "model session failed", it) }
+        }
     }
 
     fun unhold() {
@@ -101,11 +119,16 @@ class Recognizer private constructor(context: Context) {
         scheduleIdleClose()
     }
 
-    suspend fun recognize(crop: Bitmap): Recognition = withContext(Dispatchers.Default) {
+    suspend fun recognize(crop: Bitmap, timings: SolveTimings? = null): Recognition = withContext(Dispatchers.Default) {
         val pixels = crop.toPixelImage()
         mutex.withLock {
             try {
-                ensureRunner().recognize(pixels)
+                val r = ensureRunner()
+                timings?.mark(Stage.SessionReady) // no-op when the early warm-up already marked it
+                r.recognize(pixels) { timings?.mark(Stage.EncoderDone) }.also {
+                    timings?.tokens = it.tokenIds.size
+                    timings?.mark(Stage.DecoderDone)
+                }
             } finally {
                 scheduleIdleClose()
             }
@@ -116,7 +139,8 @@ class Recognizer private constructor(context: Context) {
         val model = selected() ?: throw IllegalStateException("No recognition model is installed")
         runner?.takeIf { runnerModelId == model.id }?.let { return it }
         closeRunner()
-        return VedRunner(model.manifest, model.dir).also { runner = it; runnerModelId = model.id }
+        val options = RunnerOptions(xnnpack = prefs.xnnpack.value, log = { Log.w(SolveTimings.TAG, it) })
+        return VedRunner(model.manifest, model.dir, options).also { runner = it; runnerModelId = model.id }
     }
 
     private fun closeRunner() {
@@ -137,7 +161,7 @@ class Recognizer private constructor(context: Context) {
     }
 
     companion object {
-        const val IDLE_MS = 60_000L
+        const val IDLE_MS = 5 * 60_000L
         const val BUNDLED_ASSET = "p2t-mfr-1.5-int8"
 
         @Volatile private var instance: Recognizer? = null

@@ -73,6 +73,44 @@ class RealModelTest {
         assertEquals("1 7 + x = 1 5 + 1 1", runner.recognize(loadCrop("s03")).raw)
     }
 
+    /** Prints cold (first call) and warm (median of 12) encoder/decoder times per sample; no assertions on speed. */
+    @Test fun benchmark() {
+        val dir = File("src/main/assets/models/p2t-mfr-1.5-int8")
+        val fresh = VedRunner(ModelManifest.load(dir), dir)
+        try {
+            for (sample in listOf("s03", "s05", "s08")) {
+                val img = loadCrop(sample)
+                val cold = fresh.recognize(img)
+                val runs = (1..12).map { fresh.recognize(img) }
+                val enc = runs.map { it.encoderMs }.sorted()[runs.size / 2]
+                val dec = runs.map { it.decoderMs }.sorted()[runs.size / 2]
+                println("BENCH $sample tokens=${cold.tokenIds.size} cold enc=${cold.encoderMs}ms dec=${cold.decoderMs}ms | warm median enc=${enc}ms dec=${dec}ms")
+            }
+        } finally { fresh.close() }
+    }
+
+    /** Session creation, first-call cost with and without the dummy warm-up run, and whether XNNPACK can be used here. */
+    @Test fun warmUpAndXnnpack() {
+        val dir = File("src/main/assets/models/p2t-mfr-1.5-int8")
+        val img = loadCrop("s03")
+        for (warm in listOf(false, true)) {
+            val t0 = System.nanoTime()
+            val r = VedRunner(ModelManifest.load(dir), dir)
+            val create = (System.nanoTime() - t0) / 1_000_000
+            val w0 = System.nanoTime()
+            if (warm) r.warmUp()
+            val warmMs = (System.nanoTime() - w0) / 1_000_000
+            val first = r.recognize(img)
+            println("BENCH warmUp=$warm create=${create}ms warmUp=${warmMs}ms first call enc=${first.encoderMs}ms dec=${first.decoderMs}ms latex=${first.latex}")
+            assertEquals("17+x=15+11", first.latex)
+            r.close()
+        }
+        val log = ArrayList<String>()
+        val x = VedRunner(ModelManifest.load(dir), dir, dev.ilgax.utils.math.recognition.RunnerOptions(xnnpack = true, log = { log += it }))
+        println("BENCH xnnpack requested: usesXnnpack=${x.usesXnnpack} log=$log latex=${x.recognize(img).latex}")
+        x.close()
+    }
+
     companion object {
         lateinit var runner: VedRunner
 

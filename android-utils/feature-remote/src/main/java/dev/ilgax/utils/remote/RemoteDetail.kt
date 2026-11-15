@@ -90,7 +90,7 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
                         btPermissions.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE))
                     SetupItem.Notifications -> btPermissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
                     SetupItem.BluetoothOn -> context.startActivitySafe(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                    SetupItem.Accessibility -> context.startActivitySafe(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    SetupItem.Accessibility -> dev.ilgax.utils.core.a11y.A11y.openSettings(context)
                     SetupItem.Battery -> context.startActivitySafe(
                         Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")),
                     )

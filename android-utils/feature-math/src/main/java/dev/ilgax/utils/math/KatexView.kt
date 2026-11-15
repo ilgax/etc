@@ -8,14 +8,18 @@ import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.ViewGroup
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -23,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.ilgax.utils.math.recognition.Json
@@ -48,7 +53,11 @@ val LocalKatexRenderer = staticCompositionLocalOf<@Composable (KatexContent, Mod
 
 private fun Color.hex(): String = "#%06X".format(toArgb() and 0xFFFFFF)
 
-/** One WebView per call site, reused for every update; sized from the height the page reports. */
+/**
+ * Shows [content] with KaTeX. The WebView comes from [KatexPool] (already loaded, so an update is just an
+ * `evaluateJavascript` call). Until KaTeX has painted this content the plain LaTeX text is shown instead, so
+ * the recognised text is on screen the moment OCR finishes; then it is swapped for the typeset version.
+ */
 @Composable
 fun KatexView(content: KatexContent, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -56,19 +65,72 @@ fun KatexView(content: KatexContent, modifier: Modifier = Modifier) {
     val json = remember(content, colors.onSurface, colors.onSurfaceVariant, colors.primary) {
         content.toJson(colors.onSurface.hex(), colors.onSurfaceVariant.hex(), colors.primary.hex())
     }
-    var heightDp by remember { mutableIntStateOf(40) }
-    val holder = remember { KatexHolder(context) { heightDp = it.coerceAtLeast(8) } }
-    DisposableEffect(holder) { onDispose { holder.destroy() } }
-    LaunchedEffect(json) { holder.render(json) }
-    AndroidView(factory = { holder.webView }, modifier = modifier.fillMaxWidth().height(heightDp.dp))
+    var heightDp by remember { mutableIntStateOf(0) }
+    var ready by remember { mutableStateOf(false) }
+    val holder = remember { KatexPool.acquire(context) }
+    DisposableEffect(holder) {
+        holder.onHeight = { heightDp = it.coerceAtLeast(8) }
+        onDispose { KatexPool.release(holder) }
+    }
+    val hasAnswers = content.answers.isNotEmpty()
+    LaunchedEffect(json) {
+        holder.render(json) {
+            ready = true
+            if (hasAnswers) SolveTimings.current.mark(Stage.KatexRendered)
+        }
+    }
+    Box(modifier.fillMaxWidth()) {
+        if (!ready) content.preview?.let { Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant) }
+        AndroidView(
+            factory = { holder.attach() },
+            modifier = Modifier.fillMaxWidth().height(if (ready) heightDp.dp else 0.dp),
+        )
+    }
+}
+
+/**
+ * Pre-created, kept-alive KaTeX WebViews. [warm] creates one and loads the page while the Air Command panel is
+ * still closing; a view is lent out by [acquire], returned by [release] and destroyed after [IDLE_MS] unused.
+ * Main thread only.
+ */
+object KatexPool {
+    private const val IDLE_MS = 5 * 60_000L
+    private val main = Handler(Looper.getMainLooper())
+    private val idle = ArrayList<KatexHolder>()
+    private val trim = Runnable { idle.forEach { it.destroy() }; idle.clear() }
+
+    /** Makes sure one loaded (or loading) page is ready. */
+    fun warm(context: Context) {
+        if (idle.isEmpty()) idle += KatexHolder(context.applicationContext)
+        main.removeCallbacks(trim)
+        main.postDelayed(trim, IDLE_MS)
+    }
+
+    fun acquire(context: Context): KatexHolder {
+        main.removeCallbacks(trim)
+        return if (idle.isNotEmpty()) idle.removeAt(idle.size - 1) else KatexHolder(context.applicationContext)
+    }
+
+    fun release(holder: KatexHolder) {
+        holder.detach()
+        idle += holder
+        main.removeCallbacks(trim)
+        main.postDelayed(trim, IDLE_MS)
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
-private class KatexHolder(context: Context, private val onHeight: (Int) -> Unit) {
+class KatexHolder(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var loaded = false
     private var pending: String? = null
     private var destroyed = false
+    private var seq = 0
+    private var doneSeq = 0
+    private var done: (() -> Unit)? = null
+
+    /** Called with the page's content height in CSS px (= dp) whenever it changes. */
+    var onHeight: ((Int) -> Unit)? = null
 
     val webView = WebView(context).apply {
         setBackgroundColor(AColor.TRANSPARENT)
@@ -84,7 +146,13 @@ private class KatexHolder(context: Context, private val onHeight: (Int) -> Unit)
         }
         addJavascriptInterface(object {
             @JavascriptInterface
-            fun height(px: Int) { main.post { if (!destroyed) onHeight(px) } }
+            fun height(px: Int, seq: Int) {
+                main.post {
+                    if (destroyed) return@post
+                    onHeight?.invoke(px)
+                    if (seq >= doneSeq) done?.let { done = null; it() }
+                }
+            }
         }, "Android")
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -96,16 +164,34 @@ private class KatexHolder(context: Context, private val onHeight: (Int) -> Unit)
         loadUrl("file:///android_asset/katex/card.html")
     }
 
-    fun render(json: String) {
-        if (loaded) run(json) else pending = json
+    /** [onRendered] runs once KaTeX has painted this [json] (the page reports its height after rendering). */
+    fun render(json: String, onRendered: (() -> Unit)? = null) {
+        seq++
+        doneSeq = seq
+        done = onRendered
+        val call = "render($json, $seq)"
+        if (loaded) run(call) else pending = call
     }
 
-    private fun run(json: String) {
-        if (!destroyed) webView.evaluateJavascript("render($json)", null)
+    /** The view, removed from any previous parent. */
+    fun attach(): WebView {
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        return webView
+    }
+
+    fun detach() {
+        onHeight = null
+        done = null
+        (webView.parent as? ViewGroup)?.removeView(webView)
+    }
+
+    private fun run(call: String) {
+        if (!destroyed) webView.evaluateJavascript(call, null)
     }
 
     fun destroy() {
         destroyed = true
+        detach()
         webView.removeJavascriptInterface("Android")
         webView.destroy()
     }

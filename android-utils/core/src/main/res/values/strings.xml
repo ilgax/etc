@@ -22,4 +22,10 @@
     <string name="diagnostics_empty">Nothing recorded yet.</string>
     <string name="expand">Expand</string>
     <string name="collapse">Collapse</string>
+
+    <string name="a11y_label">Utils</string>
+    <string name="a11y_description">One switch for every Utils tool that needs it. Watch remote reads which app is on screen so it can close it, and locks the screen or opens apps only when your paired watch asks. Solve takes a screenshot of the screen when you start it and shows its result card above your app. Nothing else is read, stored or sent anywhere.</string>
+    <string name="a11y_setup_note">Turn on \"Utils\" in the accessibility settings. If the toggle is greyed out for a sideloaded app, open this app\'s App info page, tap the ⋮ menu and choose \"Allow restricted settings\" first (Android 13 and later).</string>
+    <string name="a11y_open_settings">Accessibility settings</string>
+    <string name="a11y_open_app_info">Open App info</string>
 </resources>

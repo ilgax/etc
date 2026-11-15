@@ -18,6 +18,14 @@ class PixelImage(val width: Int, val height: Int, val argb: IntArray) {
  */
 object ImagePreprocessor {
     fun toTensor(image: PixelImage, spec: InputSpec): FloatArray {
+        val out = FloatArray(spec.channels * spec.width * spec.height)
+        fill(image, spec, java.nio.FloatBuffer.wrap(out))
+        return out
+    }
+
+    /** Same as [toTensor] but writes into [out] (absolute puts, capacity must be channels*width*height) so the caller can reuse one buffer. */
+    fun fill(image: PixelImage, spec: InputSpec, out: java.nio.FloatBuffer) {
+        require(out.capacity() >= spec.channels * spec.width * spec.height) { "tensor buffer too small" }
         val planes = planes(image, spec.channels)
         val w = spec.width
         val h = spec.height
@@ -36,15 +44,14 @@ object ImagePreprocessor {
                 }
             }
         }
-        val out = FloatArray(spec.channels * w * h)
         for (c in 0 until spec.channels) {
             val mean = spec.mean[c]
             val std = spec.std[c]
             val plane = resized[c]
             val base = c * w * h
-            for (i in 0 until w * h) out[base + i] = (plane[i] / 255f - mean) / std
+            for (i in 0 until w * h) out.put(base + i, (plane[i] / 255f - mean) / std)
         }
-        return out
+        out.clear()
     }
 
     /** 8-bit planes (R,G,B) or one luma plane (PIL "L"), composited over white. */

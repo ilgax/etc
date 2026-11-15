@@ -38,8 +38,8 @@ class CommandExecutor(context: Context, private val killer: AppKiller = AppKille
     fun stopRing() = main.post { RingPlayer.stop() }
 
     private fun lock(): Status {
-        val svc = LockAccessibilityService.instance ?: return Status.ACCESSIBILITY_DISABLED
-        return onMain { if (svc.lockScreen()) Status.SUCCESS else Status.FAILED }
+        val svc = RemoteA11y.service() ?: return Status.ACCESSIBILITY_DISABLED
+        return onMain { if (RemoteA11y.lockScreen()) Status.SUCCESS else Status.FAILED }
     }
 
     private fun playPause(): Status {
@@ -60,18 +60,18 @@ class CommandExecutor(context: Context, private val killer: AppKiller = AppKille
      * keeps it alive, and the app stays listed in Recents; the Shizuku killer force-stops it.
      */
     private fun killApp(): Status {
-        val svc = LockAccessibilityService.instance ?: return Status.ACCESSIBILITY_DISABLED
+        val svc = RemoteA11y.service() ?: return Status.ACCESSIBILITY_DISABLED
         return onMain {
             val pkg = closablePackage(svc, null) ?: return@onMain Status.NOTHING_TO_CLOSE
-            if (!svc.goHome()) return@onMain Status.FAILED
+            if (!RemoteA11y.goHome()) return@onMain Status.FAILED
             scheduleKill(pkg)
             Status.SUCCESS
         }
     }
 
     /** Foreground package that is fine to close, or null (nothing, this app, launcher, system UI, [except]). */
-    private fun closablePackage(svc: LockAccessibilityService, except: String?): String? {
-        val pkg = svc.foregroundPackage() ?: return null
+    private fun closablePackage(svc: android.accessibilityservice.AccessibilityService, except: String?): String? {
+        val pkg = RemoteA11y.foregroundPackage() ?: return null
         if (pkg == context.packageName || pkg == "com.android.systemui" || pkg == except || pkg in homePackages()) return null
         return pkg
     }
@@ -98,7 +98,7 @@ class CommandExecutor(context: Context, private val killer: AppKiller = AppKille
     /** [switchFrom] also closes the previous foreground app; having none to close is not an error. */
     private fun openApp(slot: Int?, switchFrom: Boolean): Status {
         if (slot == null || slot !in 0 until dev.ilgax.tabremote.protocol.Protocol.APP_SLOTS) return Status.FAILED
-        val svc = LockAccessibilityService.instance ?: return Status.ACCESSIBILITY_DISABLED
+        val svc = RemoteA11y.service() ?: return Status.ACCESSIBILITY_DISABLED
         val pkg = prefs.slot(slot) ?: return Status.SLOT_EMPTY
         val intent = context.packageManager.getLaunchIntentForPackage(pkg) ?: return Status.SLOT_EMPTY
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

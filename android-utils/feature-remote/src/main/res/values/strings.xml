@@ -5,8 +5,6 @@
     <string name="remote_channel_name">Remote listener</string>
     <string name="remote_notification_title">Listening for watch</string>
     <string name="remote_stop_ringing">Stop ringing</string>
-    <string name="remote_a11y_label">Watch remote</string>
-    <string name="remote_a11y_description">Watch remote reads which app is on screen so it can close it, and locks the screen or opens apps only when your paired watch asks. It does not read or store anything else.</string>
 
     <string name="remote_card_listening_paired">Listening · paired</string>
     <string name="remote_card_listening_unpaired">Listening · not paired</string>
@@ -34,9 +32,8 @@
     <string name="remote_chk_bt_permission">Bluetooth permissions</string>
     <string name="remote_chk_notifications">Notification permission</string>
     <string name="remote_chk_bluetooth_on">Bluetooth is on</string>
-    <string name="remote_chk_accessibility">Accessibility service enabled</string>
+    <string name="remote_chk_accessibility">Accessibility service \"Utils\" enabled</string>
     <string name="remote_chk_battery">Battery optimisation exempt</string>
-    <string name="remote_a11y_note">Needed to lock the screen and to open or close apps. If the toggle is greyed out for a sideloaded app, open this app\'s App info page, tap the ⋮ menu and choose \"Allow restricted settings\" first.</string>
     <string name="remote_done">Done</string>
     <string name="remote_todo">To do</string>
     <string name="remote_btn_grant">Grant</string>
@@ -89,7 +86,7 @@
     <string name="remote_test_open_slot">Open slot %1$d</string>
     <string name="remote_test_switch_slot">Switch to slot %1$d</string>
     <string name="remote_res_ok">Done</string>
-    <string name="remote_res_a11y">Accessibility service is not enabled</string>
+    <string name="remote_res_a11y">Accessibility service \"Utils\" is not enabled</string>
     <string name="remote_res_nothing_to_close">Nothing to close</string>
     <string name="remote_res_slot_empty">App slot not set</string>
     <string name="remote_res_start_failed">Could not open the app</string>

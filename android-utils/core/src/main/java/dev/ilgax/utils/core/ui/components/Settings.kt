@@ -144,3 +144,19 @@ fun SwitchRow(
         }
     }
 }
+
+/** The sideload explanation shown under every checklist row that asks for the shared "Utils" accessibility service. */
+@androidx.compose.runtime.Composable
+fun A11ySetupNote(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.foundation.layout.Column(modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+        Text(
+            androidx.compose.ui.res.stringResource(dev.ilgax.utils.core.R.string.a11y_setup_note),
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        androidx.compose.material3.TextButton(onClick = { dev.ilgax.utils.core.a11y.A11y.openAppInfo(context) }) {
+            Text(androidx.compose.ui.res.stringResource(dev.ilgax.utils.core.R.string.a11y_open_app_info))
+        }
+    }
+}

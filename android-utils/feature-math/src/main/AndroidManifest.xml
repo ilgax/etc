@@ -3,6 +3,13 @@
 
     <!-- No INTERNET permission on purpose: recognition and the corrections log stay on the device. -->
 
+    <!-- The floating result card: application overlay window (granted silently through Shizuku when possible),
+         hosted by a short-lived foreground service. The accessibility overlay needs none of this. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application>
         <activity
             android:name=".SolveActivity"
@@ -28,6 +35,15 @@
         </activity-alias>
 
         <service
+            android:name=".SolveOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows the Solve result card as a floating window over the app below while it is open" />
+        </service>
+
+        <service
             android:name=".SolveTile"
             android:exported="true"
             android:icon="@drawable/ic_math"
@@ -38,17 +54,5 @@
             </intent-filter>
         </service>
 
-        <service
-            android:name=".ScreenCaptureAccessibilityService"
-            android:exported="true"
-            android:label="@string/math_a11y_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_config_screencap" />
-        </service>
     </application>
 </manifest>

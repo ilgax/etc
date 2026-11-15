@@ -3,6 +3,8 @@ package dev.ilgax.utils.math
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -12,100 +14,132 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.lifecycleScope
+import dev.ilgax.utils.core.a11y.A11y
 import dev.ilgax.utils.core.shizuku.ShizukuState
 import dev.ilgax.utils.core.shizuku.ShizukuStatus
-import dev.ilgax.utils.core.ui.components.copyToClipboard
 import dev.ilgax.utils.core.ui.theme.UtilsTheme
-import dev.ilgax.utils.math.normalize.LatexNormalizer
 import dev.ilgax.utils.math.normalize.PxRect
-import dev.ilgax.utils.math.normalize.SolvePipeline
-import dev.ilgax.utils.math.solver.SolveResult
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.util.UUID
 import kotlin.math.max
-import kotlin.math.min
 
 /**
- * The Solve overlay. Fully transparent until the screenshot exists: wait [SolveTiming.CAPTURE_DELAY_MS],
- * capture, then show the frozen picture, take a lasso, recognise, solve and show the card.
+ * The blocking phase of Solve, and nothing else. Fully transparent until the screenshot exists: wait
+ * [SolveTiming.CAPTURE_DELAY_MS] (while the model session, the KaTeX WebView and the capture path warm up in
+ * parallel), capture, show the frozen picture and take a lasso. As soon as the lasso is finished the result card
+ * is handed to [SolveController], which shows it as a floating window, and this activity finishes so the app
+ * underneath is live again. Only when no overlay window is possible does the card stay inside this activity.
  */
 class SolveActivity : ComponentActivity() {
     private val state = OverlayState()
+    private val controller by lazy { SolveController.get(this) }
     private val grabber by lazy { ScreenGrabber(this) }
     private val recognizer by lazy { Recognizer.get(this) }
     private val prefs by lazy { MathPrefs.get(this) }
-    private val corrections by lazy { CorrectionsStore(File(filesDir, "math/corrections")) }
-    private val sessionId = UUID.randomUUID().toString().replace("-", "").take(16)
+    private val timings = SolveTimings()
 
     private var screenshot: Bitmap? = null
-    private var cropPng: ByteArray? = null
-    private var crop: Bitmap? = null
-    private var originalLatex = ""
-    private var initialText = ""
-    private var target: Char? = null
-    private var recognizeJob: Job? = null
-    private var solveJob: Job? = null
-    private var lastSavedText: String? = null
+    private var softScreenshot: Deferred<Bitmap>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS }
         window.isNavigationBarContrastEnforced = false
-        recognizer.hold()
-        grabber.prewarm()
-        val delayMs = if (intent.getBooleanExtra(EXTRA_FROM_TILE, false)) SolveTiming.CAPTURE_DELAY_TILE_MS else SolveTiming.CAPTURE_DELAY_MS
+
+        SolveTimings.current = timings
+        timings.mark(Stage.ActivityStart)
+        timings.mark(Stage.ProcessStart, System.currentTimeMillis() - (SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()))
+
+        // Everything below starts now, in parallel, and overlaps the 300 ms Air Command close delay.
+        controller.beginNewSolve(timings)          // removes a card from a previous Solve before any screenshot
+        recognizer.hold(timings)                   // ONNX session + warm-up run, on a background thread
+        grabber.prewarm()                          // Shizuku UserService bind (when that is the capture path)
+        window.decorView.post { KatexPool.warm(this) } // WebView + KaTeX page, loaded offscreen
+        val overlayReady = lifecycleScope.async(Dispatchers.IO) { overlayReady() }
+
+        val delayMs = when {
+            intent.getBooleanExtra(EXTRA_RECIRCLE, false) -> SolveTiming.CAPTURE_DELAY_RECIRCLE_MS
+            intent.getBooleanExtra(EXTRA_FROM_TILE, false) -> SolveTiming.CAPTURE_DELAY_TILE_MS
+            else -> SolveTiming.CAPTURE_DELAY_MS
+        }
         lifecycleScope.launch {
             delay(delayMs)
-            when (val result = grabber.grab()) {
-                is GrabResult.Ok -> {
-                    screenshot = result.bitmap
-                    state.screenshot = result.bitmap.asImageBitmap()
-                    show()
-                }
-                is GrabResult.Failed -> {
-                    state.problem = CaptureProblem(result.detail, result.shizuku != ShizukuStatus.Ready)
-                    show()
-                }
+            if (!overlayReady.await() && !prefs.overlayAsked.value) {
+                state.overlayPrompt = true // once: explain, then send the user to the settings page
+                show()
+            } else {
+                capture()
+            }
+        }
+    }
+
+    /** Can the card float? Accessibility overlay needs nothing; the application overlay needs the permission. */
+    private suspend fun overlayReady(): Boolean =
+        grabber.accessibilityConnected() || OverlayPermission.ensure(this)
+
+    private suspend fun capture() {
+        timings.mark(Stage.CaptureRequested)
+        when (val result = grabber.grab()) {
+            is GrabResult.Ok -> {
+                timings.captureMethod = "${result.how}"
+                timings.mark(Stage.CaptureDone)
+                screenshot = result.bitmap
+                state.screenshot = result.bitmap.asImageBitmap()
+                timings.mark(Stage.BitmapReady)
+                // Reading pixels needs a software bitmap; the copy happens while the user is still circling.
+                softScreenshot = lifecycleScope.async { grabber.toSoftware(result.bitmap) }
+                show()
+            }
+            is GrabResult.Failed -> {
+                state.problem = CaptureProblem(result.detail, result.shizuku != ShizukuStatus.Ready)
+                show()
             }
         }
     }
 
     /** Nothing is composed (so nothing is drawn) until there is a bitmap or a problem to show. */
     private fun show() {
-        setContent {
-            UtilsTheme {
-                SolveOverlay(state, OverlayActions(
-                    onLasso = ::onLasso,
-                    onLatex = ::onLatex,
-                    onToggleSteps = { state.card = state.card?.let { it.copy(stepsOpen = !it.stepsOpen) } },
-                    onCopy = ::onCopy,
-                    onRetry = ::onRetry,
-                    onClose = { finish() },
-                    onOpenShizuku = { ShizukuState.openShizukuApp(this); finish() },
-                    onOpenAccessibility = {
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        finish()
-                    },
-                ))
-            }
-        }
+        val actions = OverlayActions(
+            onLasso = ::onLasso,
+            onLatex = controller.actions.onLatex,
+            onToggleSteps = controller.actions.onToggleSteps,
+            onCopy = controller.actions.onCopy,
+            onRetry = ::onRetry,
+            onClose = { controller.close(); finish() },
+            onMinimize = controller.actions.onMinimize,
+            onEditing = {}, // inside the activity the keyboard works as usual
+            onGrantOverlay = {
+                prefs.setOverlayAsked(true)
+                startActivity(OverlayPermission.settingsIntent(this))
+                finish()
+            },
+            onSkipOverlay = {
+                prefs.setOverlayAsked(true)
+                state.overlayPrompt = false
+                lifecycleScope.launch { capture() }
+            },
+            onOpenShizuku = { ShizukuState.openShizukuApp(this); finish() },
+            onOpenAccessibility = {
+                A11y.openSettings(this)
+                finish()
+            },
+        )
+        setContent { UtilsTheme { SolveOverlay(state, controller.floating, actions) } }
     }
 
     private fun onLasso(points: List<Offset>, container: IntSize) {
         val bmp = screenshot ?: return
+        val soft = softScreenshot ?: return
         if (points.size < 8 || container.width == 0 || container.height == 0) return
         val minX = points.minOf { it.x }; val maxX = points.maxOf { it.x }
         val minY = points.minOf { it.y }; val maxY = points.maxOf { it.y }
         if (maxX - minX < MIN_LASSO_PX || maxY - minY < MIN_LASSO_PX) { state.lasso = emptyList(); return }
+        timings.mark(Stage.LassoDone)
         state.lasso = points
-        state.anchor = PxRect(minX, minY, maxX, maxY)
         // window px -> bitmap px, bounding box plus a small margin
         val sx = bmp.width.toFloat() / container.width
         val sy = bmp.height.toFloat() / container.height
@@ -114,79 +148,28 @@ class SolveActivity : ComponentActivity() {
         val t = (minY * sy - margin).toInt().coerceIn(0, bmp.height - 1)
         val r = (maxX * sx + margin).toInt().coerceIn(l + 1, bmp.width)
         val b = (maxY * sy + margin).toInt().coerceIn(t + 1, bmp.height)
-        val cropped = Bitmap.createBitmap(bmp, l, t, r - l, b - t)
-        crop = cropped
-        cropPng = null
-        recognize(cropped)
-    }
-
-    private fun recognize(bitmap: Bitmap) {
-        recognizeJob?.cancel()
-        solveJob?.cancel()
-        lastSavedText = null
-        state.card = CardUi(reading = true)
-        recognizeJob = lifecycleScope.launch {
-            try {
-                val rec = recognizer.recognize(bitmap)
-                originalLatex = rec.latex
-                val n = LatexNormalizer.normalize(rec.latex, prefs.dot.value)
-                target = n.target
-                initialText = n.latex
-                if (n.latex.isBlank()) {
-                    state.card = CardUi(reading = false, message = getString(R.string.math_card_no_text))
-                } else {
-                    state.card = CardUi(latex = n.latex, reading = false)
-                    solve(n.latex, immediately = true)
-                }
+        val origin = IntArray(2).also { window.decorView.getLocationOnScreen(it) }
+        val anchor = PxRect(minX + origin[0], minY + origin[1], maxX + origin[0], maxY + origin[1])
+        lifecycleScope.launch {
+            val cropped = try {
+                Bitmap.createBitmap(soft.await(), l, t, r - l, b - t)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (t: Throwable) {
-                state.card = CardUi(reading = false, message = getString(R.string.math_card_recognition_failed, t.message ?: t.javaClass.simpleName))
+            } catch (t2: Throwable) {
+                state.screenshot = null
+                state.problem = CaptureProblem(t2.message ?: t2.javaClass.simpleName, false)
+                return@launch
             }
+            controller.start(cropped, anchor)
+            // Unfreeze: the card floats over the live app. Only if that is impossible does it stay in here.
+            if (controller.showWindow(this@SolveActivity)) finish()
         }
     }
 
-    private fun onLatex(text: String) {
-        state.card = state.card?.copy(latex = text, copied = false, message = null)
-        solve(text, immediately = false)
-    }
-
-    /** Edits re-solve after a short pause; the first solve runs at once. */
-    private fun solve(text: String, immediately: Boolean) {
-        solveJob?.cancel()
-        solveJob = lifecycleScope.launch {
-            if (!immediately) delay(DEBOUNCE_MS)
-            val result = withContext(Dispatchers.Default) { SolvePipeline.run(text, prefs.dot.value, target) }
-            state.card = state.card?.copy(result = result)
-            if (!immediately) logCorrection(text, result)
-        }
-    }
-
-    /** An edit that solves is a training example: crop + what the model said + what the user fixed it to. */
-    private suspend fun logCorrection(text: String, result: SolveResult) {
-        val trimmed = text.trim()
-        if (!prefs.corrections.value || result !is SolveResult.Solved || trimmed == initialText.trim() || trimmed == lastSavedText) return
-        val bmp = crop ?: return
-        lastSavedText = trimmed
-        withContext(Dispatchers.IO) {
-            val png = cropPng ?: ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray().also { cropPng = it }
-            corrections.save(sessionId, png, originalLatex, trimmed, recognizer.selected()?.name ?: "unknown", System.currentTimeMillis())
-        }
-    }
-
-    private fun onCopy() {
-        val card = state.card ?: return
-        val answer = (card.result as? SolveResult.Solved)?.answers?.joinToString("\n") { it.plain }.orEmpty()
-        copyToClipboard(this, "Equation", listOf(answer, card.latex).filter { it.isNotBlank() }.joinToString("\n"))
-        state.card = card.copy(copied = true)
-    }
-
+    /** Fallback mode only (the card is inside this activity): back to the lasso. */
     private fun onRetry() {
-        recognizeJob?.cancel()
-        solveJob?.cancel()
-        state.card = null
+        controller.close()
         state.lasso = emptyList()
-        state.anchor = null
     }
 
     override fun finish() {
@@ -197,12 +180,15 @@ class SolveActivity : ComponentActivity() {
 
     override fun onDestroy() {
         recognizer.unhold()
+        state.screenshot = null
+        screenshot = null
+        softScreenshot = null
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_FROM_TILE = "from_tile"
-        private const val DEBOUNCE_MS = 400L
+        const val EXTRA_RECIRCLE = "recircle"
         private const val MIN_LASSO_PX = 24f
     }
 }

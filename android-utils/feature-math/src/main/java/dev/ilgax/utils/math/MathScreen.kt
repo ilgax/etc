@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ilgax.utils.core.CardMode
 import dev.ilgax.utils.core.R as CoreR
+import dev.ilgax.utils.core.a11y.A11y
 import dev.ilgax.utils.core.shizuku.ShizukuState
 import dev.ilgax.utils.core.shizuku.ShizukuStatus
 import dev.ilgax.utils.core.ui.components.DetailScaffold
@@ -70,6 +71,7 @@ data class MathUiState(
     val dot: DotMeaning,
     val corrections: Boolean,
     val correctionCount: Int,
+    val showTimings: Boolean = true,
     val importError: String? = null,
     val tryText: String = "",
 ) {
@@ -85,6 +87,7 @@ class MathActions(
     val onImport: () -> Unit = {},
     val onDot: (DotMeaning) -> Unit = {},
     val onCorrections: (Boolean) -> Unit = {},
+    val onShowTimings: (Boolean) -> Unit = {},
     val onExport: () -> Unit = {},
     val onDeleteCorrections: () -> Unit = {},
     val onTryText: (String) -> Unit = {},
@@ -103,9 +106,11 @@ internal fun MathDetail(contentPadding: PaddingValues, modifier: Modifier) {
     val snackbar = remember { SnackbarHostState() }
 
     val shizuku by ShizukuState.status.collectAsStateWithLifecycle()
-    val connected by ScreenCaptureAccessibilityService.connected.collectAsStateWithLifecycle()
+    val a11yService by A11y.service.collectAsStateWithLifecycle()
+    val connected = a11yService != null
     val dot by prefs.dot.collectAsStateWithLifecycle()
     val corrections by prefs.corrections.collectAsStateWithLifecycle()
+    val showTimings by prefs.showTimings.collectAsStateWithLifecycle()
     val selected by prefs.selectedModel.collectAsStateWithLifecycle()
     val models by recognizer.models.collectAsStateWithLifecycle()
     var count by remember { mutableIntStateOf(store.count()) }
@@ -148,6 +153,7 @@ internal fun MathDetail(contentPadding: PaddingValues, modifier: Modifier) {
         dot = dot,
         corrections = corrections,
         correctionCount = count,
+        showTimings = showTimings,
         importError = importError,
         tryText = tryText,
     )
@@ -156,12 +162,13 @@ internal fun MathDetail(contentPadding: PaddingValues, modifier: Modifier) {
         actions = MathActions(
             onSolveNow = { context.startActivity(MathModule.launchIntent(context)) },
             onShizukuAction = { ShizukuState.performAction(context, shizuku) },
-            onOpenAccessibility = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+            onOpenAccessibility = { A11y.openSettings(context) },
             onSelectModel = { recognizer.select(it) },
             onDeleteModel = { id -> scope.launch { recognizer.delete(id) } },
             onImport = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
             onDot = prefs::setDot,
             onCorrections = prefs::setCorrections,
+            onShowTimings = prefs::setShowTimings,
             onExport = { exportLauncher.launch("solve-corrections.zip") },
             onDeleteCorrections = { store.deleteAll(); count = 0 },
             onTryText = { tryText = it },
@@ -186,6 +193,7 @@ fun MathScreen(
         ModelGroup(state, actions)
         DotGroup(state, actions)
         CorrectionsGroup(state, actions)
+        DiagnosticsGroup(state, actions)
         TryGroup(state, actions)
         Text(
             stringResource(R.string.math_footnote),
@@ -330,6 +338,18 @@ private fun CorrectionsGroup(state: MathUiState, actions: MathActions) {
                 TextButton(onClick = actions.onDeleteCorrections, enabled = state.correctionCount > 0) { Text(stringResource(R.string.math_corrections_delete)) }
             }
         }
+    }
+}
+
+@Composable
+private fun DiagnosticsGroup(state: MathUiState, actions: MathActions) {
+    SettingsGroup(title = stringResource(R.string.math_group_diagnostics)) {
+        SwitchRow(
+            title = stringResource(R.string.math_timings_show),
+            supporting = stringResource(R.string.math_timings_show_hint),
+            checked = state.showTimings,
+            onCheckedChange = actions.onShowTimings,
+        )
     }
 }
 

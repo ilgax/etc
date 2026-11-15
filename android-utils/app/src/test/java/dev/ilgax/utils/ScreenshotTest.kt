@@ -18,7 +18,10 @@ import androidx.compose.ui.layout.ContentScale
 import dev.ilgax.utils.math.CardUi
 import dev.ilgax.utils.math.LocalKatexRenderer
 import dev.ilgax.utils.math.OverlayActions
+import dev.ilgax.utils.math.FloatingState
 import dev.ilgax.utils.math.OverlayState
+import dev.ilgax.utils.math.SolveTimings
+import dev.ilgax.utils.math.Stage
 import dev.ilgax.utils.math.SolveOverlay
 import dev.ilgax.utils.math.normalize.DotMeaning
 import dev.ilgax.utils.math.normalize.PxRect
@@ -158,17 +161,23 @@ class ScreenshotTest {
     @Config(qualifiers = "w411dp-h2400dp-night-xhdpi")
     fun mathDetailPhoneDark() = shot("11-math-detail-phone-dark", true, withKatex("try-dark", detailPage(Fixtures.math(mathCard))))
 
+    /** The floating card over the live page (no frozen screenshot any more), with the timings line. */
     @Test
     @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
-    fun solveResultTabletLight() = shot("12-solve-result-tablet-light", false, overlay("result-light", card = true))
+    fun solveResultTabletLight() = shot("12-solve-result-tablet-light", false, floatingScene("result-light", minimized = false))
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp-land-night-hdpi")
-    fun solveResultTabletDark() = shot("13-solve-result-tablet-dark", true, overlay("result-dark", card = true))
+    fun solveResultTabletDark() = shot("13-solve-result-tablet-dark", true, floatingScene("result-dark", minimized = false))
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
-    fun solveLassoTabletLight() = shot("14-solve-lasso-tablet-light", false, overlay("result-light", card = false))
+    fun solveLassoTabletLight() = shot("14-solve-lasso-tablet-light", false, lassoScene())
+
+    /** Minimised: just the answer, tap to expand. */
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveMinimisedPillTabletLight() = shot("16-solve-pill-tablet-light", false, floatingScene("result-light", minimized = true))
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
@@ -176,7 +185,7 @@ class ScreenshotTest {
         val state = remember { OverlayState().apply { problem = CaptureProblem("Shizuku: UserService binder is not alive", true) } }
         Box(Modifier.fillMaxSize()) {
             Image(pageBitmap().asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-            SolveOverlay(state, OverlayActions())
+            SolveOverlay(state, FloatingState(), OverlayActions())
         }
     }
 
@@ -191,35 +200,55 @@ class ScreenshotTest {
 
     /** A fake "Flexcil page": white, with one of the user's handwritten samples on it. */
     private fun pageBitmap(): Bitmap {
-        val sample = BitmapFactory.decodeStream(javaClass.getResourceAsStream("/samples/s05.jpg")!!)
+        val sample = BitmapFactory.decodeStream(javaClass.getResourceAsStream("/samples/s02.jpg")!!)
         val page = Bitmap.createBitmap(1920, 1200, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(page)
         c.drawColor(android.graphics.Color.WHITE)
         val rule = android.graphics.Paint().apply { color = 0xFFD8DEE8.toInt(); strokeWidth = 2f }
         for (y in 140..1200 step 70) c.drawLine(0f, y.toFloat(), 1920f, y.toFloat(), rule)
-        c.drawBitmap(sample, null, android.graphics.Rect(200, 330, 200 + 860, 330 + 359), null)
+        c.drawBitmap(sample, null, android.graphics.Rect(200, 330, 200 + 860, 330 + 353), null)
         return page
     }
 
-    private fun overlay(fixture: String, card: Boolean): @Composable () -> Unit = withKatex(fixture) {
+    private val circleCx = 630f
+    private val circleCy = 506f
+    private val circleAnchor = PxRect(circleCx - 494f, circleCy - 236f, circleCx + 494f, circleCy + 236f)
+
+    /** Frozen-screenshot phase: the page, dimmed, with the freehand loop (hdpi 1.5 gives a 1920x1200 window). */
+    private fun lassoScene(): @Composable () -> Unit = {
         val state = remember {
             OverlayState().apply {
                 screenshot = pageBitmap().asImageBitmap()
-                // freehand-looking loop around the equation (window px; hdpi 1.5 gives a 1920x1200 window)
-                val cx = 630f; val cy = 510f
                 lasso = (0 until 72).map { i ->
                     val a = i / 72f * 6.2832f
                     val wobble = 1f + 0.05f * kotlin.math.sin(a * 5f)
-                    Offset(cx + 470f * wobble * kotlin.math.cos(a), cy + 225f * wobble * kotlin.math.sin(a))
-                }
-                anchor = PxRect(cx - 494f, cy - 236f, cx + 494f, cy + 236f)
-                if (card) {
-                    val r = SolvePipeline.run("2x^{2}+144=400", DotMeaning.Multiply)
-                    this.card = CardUi(latex = "2x^{2}+144=400", reading = false, result = r, stepsOpen = true)
+                    Offset(circleCx + 470f * wobble * kotlin.math.cos(a), circleCy + 225f * wobble * kotlin.math.sin(a))
                 }
             }
         }
-        SolveOverlay(state, OverlayActions())
+        SolveOverlay(state, FloatingState(), OverlayActions())
+    }
+
+    /** What the user sees after the lasso: the live page, un-dimmed, with the card window on top of it. */
+    private fun floatingScene(fixture: String, minimized: Boolean): @Composable () -> Unit = withKatex(fixture) {
+        val floating = remember {
+            FloatingState().apply {
+                anchor = circleAnchor
+                val r = SolvePipeline.run("2x^{2}+144=400", DotMeaning.Multiply)
+                val t = SolveTimings.format(
+                    mapOf(
+                        Stage.CaptureRequested to 1000L, Stage.BitmapReady to 1180L, Stage.LassoDone to 3000L, Stage.SessionReady to 1500L,
+                        Stage.EncoderDone to 3190L, Stage.DecoderDone to 3420L, Stage.SolveDone to 3423L, Stage.KatexRendered to 3463L,
+                    ),
+                    tokens = 14,
+                )
+                card = CardUi(latex = "2x^{2}+144=400", reading = false, result = r, stepsOpen = !minimized, minimized = minimized, timings = t)
+            }
+        }
+        Box(Modifier.fillMaxSize()) {
+            Image(pageBitmap().asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+            SolveOverlay(OverlayState(), floating, OverlayActions())
+        }
     }
 
     /** Single-column detail page, as shown after tapping a card on a phone. */

@@ -5,8 +5,6 @@
     <string name="math_tile_label">Solve</string>
     <string name="math_shortcut_short">Solve</string>
     <string name="math_shortcut_long">Solve an equation</string>
-    <string name="math_a11y_label">Utils – screen capture for Solve</string>
-    <string name="math_a11y_description">Lets the Solve tool take a screenshot of the current screen. It does not read or change anything else.</string>
 
     <string name="math_card_ready_shizuku">Ready · Shizuku · %1$s</string>
     <string name="math_card_ready_a11y">Ready · Accessibility · %1$s</string>
@@ -15,8 +13,8 @@
 
     <string name="math_headline_ready">Ready to solve</string>
     <string name="math_headline_not_ready">Not ready</string>
-    <string name="math_supporting_shizuku">Screenshots are taken with Shizuku.</string>
-    <string name="math_supporting_a11y">Screenshots are taken with the accessibility service.</string>
+    <string name="math_supporting_shizuku">Screenshots are taken with Shizuku. The accessibility service is a little faster and also lets the card float without extra permission.</string>
+    <string name="math_supporting_a11y">Screenshots are taken with the accessibility service, and the result card floats over your app.</string>
     <string name="math_supporting_none">Turn on Shizuku or the accessibility service to take screenshots.</string>
     <string name="math_solve_now">Solve now</string>
 
@@ -25,15 +23,15 @@
     <string name="math_method_shizuku">Shizuku</string>
     <string name="math_method_accessibility">Accessibility service</string>
     <string name="math_method_none">None available</string>
-    <string name="math_setup_shizuku">Shizuku (preferred)</string>
+    <string name="math_setup_shizuku">Shizuku</string>
     <string name="math_setup_shizuku_ready">Ready</string>
     <string name="math_setup_shizuku_permission">Permission needed</string>
     <string name="math_setup_shizuku_not_running">Not running</string>
     <string name="math_setup_shizuku_not_installed">Not installed</string>
     <string name="state_ready_pill">Active</string>
-    <string name="math_setup_a11y">Accessibility service (fallback)</string>
+    <string name="math_setup_a11y">Accessibility service (fastest)</string>
     <string name="math_setup_a11y_on">On</string>
-    <string name="math_setup_a11y_off">Off · \"Utils – screen capture for Solve\"</string>
+    <string name="math_setup_a11y_off">Off · turn on \"Utils\"</string>
     <string name="math_action_shizuku_grant">Grant</string>
     <string name="math_action_shizuku_open">Open Shizuku</string>
     <string name="math_action_a11y">Open settings</string>
@@ -51,6 +49,10 @@
     <string name="math_model_import_error">Couldn\'t import the model</string>
     <string name="math_model_imported_ok">Imported %1$s</string>
     <string name="math_model_size">%1$s MB</string>
+
+    <string name="math_group_diagnostics">Diagnostics</string>
+    <string name="math_timings_show">Show timings</string>
+    <string name="math_timings_show_hint">A line at the bottom of the result card with how long capture, recognition, solving and drawing took, e.g. cap 180 · ocr 420 · solve 3 ms. Also logged as SolveTimings.</string>
 
     <string name="math_group_dot">Dot between numbers means</string>
     <string name="math_dot_multiply">Multiply</string>
@@ -85,10 +87,20 @@
     <string name="math_card_copied">Copied</string>
     <string name="math_card_retry">Re-circle</string>
     <string name="math_card_close">Close</string>
+    <string name="math_card_minimize">Minimise or expand</string>
+    <string name="math_pill_unsolved">No answer</string>
     <string name="math_card_cant_solve">Can\'t solve this yet</string>
     <string name="math_card_cant_solve_reason">Because %1$s. Edit the LaTeX above to fix it.</string>
     <string name="math_card_no_text">Nothing was recognised. Edit the LaTeX or re-circle.</string>
     <string name="math_card_recognition_failed">Recognition failed: %1$s</string>
+
+    <string name="math_perm_title">Let the card float over your PDF</string>
+    <string name="math_perm_body">Solve shows its result in a small floating card so you can keep writing underneath. For that Android needs \"Display over other apps\" turned on for Utils. The next screen is the system settings page; turn it on, then run Solve again. This is asked only once.</string>
+    <string name="math_perm_open">Open settings</string>
+    <string name="math_perm_skip">Not now (card covers the screen)</string>
+    <string name="math_overlay_channel">Solve card</string>
+    <string name="math_overlay_notification_title">Solve</string>
+    <string name="math_overlay_notification_text">The result card is open</string>
 
     <string name="math_fail_title">Can\'t take a screenshot</string>
     <string name="math_fail_body">Solve needs either Shizuku or the accessibility service to capture the screen.</string>

@@ -9,6 +9,7 @@ import dev.ilgax.utils.core.CardMode
 import dev.ilgax.utils.core.ModuleCardState
 import dev.ilgax.utils.core.ModuleShortcut
 import dev.ilgax.utils.core.UtilModule
+import dev.ilgax.utils.core.a11y.A11y
 import dev.ilgax.utils.core.shizuku.ShizukuState
 import dev.ilgax.utils.core.shizuku.ShizukuStatus
 import kotlinx.coroutines.CoroutineScope
@@ -48,9 +49,18 @@ class MathModule(context: Context) : UtilModule {
     }
 
     override val cardState: StateFlow<ModuleCardState> = combine(
-        ShizukuState.status, ScreenCaptureAccessibilityService.connected, prefs.selectedModel, refresh,
+        ShizukuState.status, A11y.service, prefs.selectedModel, refresh,
     ) { shizuku, _, _, _ -> compute(shizuku) }
         .stateIn(scope, SharingStarted.Eagerly, ModuleCardState(CardMode.Unavailable, app.getString(R.string.math_card_not_ready)))
+
+    init {
+        A11y.register(MathA11y(app))
+        // The Shizuku UserService is a daemon: bind it as soon as Utils starts (and whenever Shizuku becomes ready)
+        // if that is the capture path, so the first Solve finds it connected.
+        scope.launch {
+            combine(ShizukuState.status, A11y.service) { _, _ -> Unit }.collect { grabber.prewarm() }
+        }
+    }
 
     override val shortcut = ModuleShortcut(
         id = "solve_equation",

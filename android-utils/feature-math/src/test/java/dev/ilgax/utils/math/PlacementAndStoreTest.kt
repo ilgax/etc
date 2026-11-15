@@ -3,6 +3,7 @@ package dev.ilgax.utils.math
 import dev.ilgax.utils.math.normalize.CardPlacement
 import dev.ilgax.utils.math.normalize.CardSide
 import dev.ilgax.utils.math.normalize.DotMeaning
+import dev.ilgax.utils.math.normalize.PxPoint
 import dev.ilgax.utils.math.normalize.PxRect
 import dev.ilgax.utils.math.normalize.SolvePipeline
 import dev.ilgax.utils.math.solver.SolveResult
@@ -51,6 +52,32 @@ class PlacementAndStoreTest {
         assertEquals(16f, p.x); assertEquals(16f, p.y)
     }
 
+    @Test fun placeInRespectsBoundsOffset() {
+        // usable area starts below a 50 px status bar and ends above a 40 px nav bar
+        val bounds = PxRect(0f, 50f, 1000f, 760f)
+        val p = CardPlacement.placeIn(PxRect(300f, 100f, 700f, 200f), bounds, 400f, 300f, 16f, 12f)
+        assertEquals(CardSide.Below, p.side)
+        assertEquals(300f, p.x); assertEquals(212f, p.y)
+        // an anchor low on the screen puts the card above it, never under the nav bar
+        val q = CardPlacement.placeIn(PxRect(300f, 600f, 700f, 700f), bounds, 400f, 300f, 16f, 12f)
+        assertEquals(CardSide.Above, q.side)
+        assertEquals(288f, q.y)
+        assertTrue(q.y >= bounds.top + 16f)
+    }
+    @Test fun placeInOffsetsHorizontally() {
+        val bounds = PxRect(100f, 0f, 1100f, 800f)
+        val p = CardPlacement.placeIn(PxRect(150f, 20f, 190f, 60f), bounds, 400f, 300f, 16f, 12f)
+        assertTrue(p.x >= 116f) // clamped to the left edge of the bounds plus margin, not to x=16
+    }
+    @Test fun clampIntoKeepsCardOnScreen() {
+        val bounds = PxRect(0f, 50f, 1000f, 760f)
+        assertEquals(PxPoint(16f, 66f), CardPlacement.clampInto(-300f, -20f, 400f, 300f, bounds, 16f))
+        assertEquals(PxPoint(584f, 444f), CardPlacement.clampInto(5000f, 5000f, 400f, 300f, bounds, 16f))
+        assertEquals(PxPoint(500f, 300f), CardPlacement.clampInto(500f, 300f, 400f, 300f, bounds, 16f))
+        // bigger than the area: pinned to the top-left margin rather than thrown off screen
+        assertEquals(PxPoint(16f, 66f), CardPlacement.clampInto(300f, 300f, 2000f, 2000f, bounds, 16f))
+    }
+
     @Test fun correctionsStoreRoundTrip() {
         val store = CorrectionsStore(tmp.newFolder("c"))
         assertEquals(0, store.count())
@@ -80,7 +107,8 @@ class PlacementAndStoreTest {
     }
 
     @Test fun captureMethodChoice() {
-        assertEquals(CaptureMethod.Shizuku, chooseMethod(true, true))
+        // fastest first: takeScreenshot needs no process spawn
+        assertEquals(CaptureMethod.Accessibility, chooseMethod(true, true))
         assertEquals(CaptureMethod.Shizuku, chooseMethod(true, false))
         assertEquals(CaptureMethod.Accessibility, chooseMethod(false, true))
         assertEquals(CaptureMethod.None, chooseMethod(false, false))

@@ -5,6 +5,8 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
@@ -18,13 +20,20 @@ data class Recognition(
     val decoderMs: Long,
 )
 
+/** Session settings. XNNPACK is off unless asked for; if it cannot be added the session silently uses the CPU provider. */
+data class RunnerOptions(
+    val threads: Int = CpuTopology.threads(),
+    val xnnpack: Boolean = false,
+    val log: (String) -> Unit = {},
+)
+
 /**
  * Generic VisionEncoderDecoder runner driven by a [ModelManifest]: encoder once, then greedy decoding.
  * `decoderCache = none` re-feeds the whole prefix each step; `merged_past` uses a Hugging Face merged
  * decoder (past_key_values.* inputs, present.* outputs, use_cache_branch flag).
  * Not thread-safe: call [recognize] from one coroutine at a time.
  */
-class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
+class VedRunner(val manifest: ModelManifest, dir: File, val options: RunnerOptions = RunnerOptions()) : AutoCloseable {
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val encoder: OrtSession
     private val decoder: OrtSession
@@ -38,15 +47,48 @@ class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
     private val pastShapes: Map<String, LongArray>
     private val hasCacheFlag: Boolean
 
+    /** The decoder re-reads the whole prefix every step without a cache, so a runaway costs quadratic time: cap it. */
+    private val maxSteps = manifest.maxTokens.coerceAtMost(if (manifest.decoderCache == DecoderCache.None) MAX_STEPS_UNCACHED else MAX_STEPS_CACHED)
+
+    /** Reused for every call: the encoder input (direct, so ONNX Runtime reads it without a copy). */
+    private val inputBuffer: FloatBuffer = ByteBuffer
+        .allocateDirect(manifest.input.channels * manifest.input.width * manifest.input.height * 4)
+        .order(ByteOrder.nativeOrder()).asFloatBuffer()
+    private val inputShape = longArrayOf(1, manifest.input.channels.toLong(), manifest.input.height.toLong(), manifest.input.width.toLong())
+
+    /** True when the sessions run with the XNNPACK execution provider. */
+    val usesXnnpack: Boolean
+
     init {
-        val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
-        fun opts() = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(threads)
+        val threads = options.threads.coerceIn(1, 8)
+        fun opts(xnn: Boolean) = OrtSession.SessionOptions().apply {
+            // With XNNPACK the provider owns the worker threads; ORT's own pool stays at one.
+            setIntraOpNumThreads(if (xnn) 1 else threads)
             setInterOpNumThreads(1)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            if (xnn) addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
         }
-        encoder = env.createSession(File(dir, manifest.encoder).path, opts())
-        decoder = env.createSession(File(dir, manifest.decoder).path, opts())
+        fun open(file: String, xnn: Boolean): OrtSession = opts(xnn).use { env.createSession(File(dir, file).path, it) }
+        var xnn = options.xnnpack
+        var enc: OrtSession? = null
+        var dec: OrtSession? = null
+        if (xnn) {
+            try {
+                enc = open(manifest.encoder, true)
+                dec = open(manifest.decoder, true)
+            } catch (t: Throwable) {
+                options.log("XNNPACK unavailable, using the CPU provider: ${t.message}")
+                runCatching { enc?.close() }
+                enc = null; dec = null; xnn = false
+            }
+        }
+        if (enc == null || dec == null) {
+            enc = open(manifest.encoder, false)
+            dec = open(manifest.decoder, false)
+        }
+        usesXnnpack = xnn
+        encoder = enc
+        decoder = dec
         encInput = encoder.inputNames.first()
         val names = decoder.inputNames.toList()
         decIds = names.firstOrNull { it == "input_ids" } ?: names.first()
@@ -63,21 +105,39 @@ class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
         }
     }
 
-    fun recognize(image: PixelImage): Recognition {
-        val input = ImagePreprocessor.toTensor(image, manifest.input)
-        val shape = longArrayOf(1, manifest.input.channels.toLong(), manifest.input.height.toLong(), manifest.input.width.toLong())
+    /**
+     * [onEncoderDone] fires right after the encoder (before decoding) so callers can timestamp the stages.
+     */
+    fun recognize(image: PixelImage, onEncoderDone: (() -> Unit)? = null): Recognition {
+        ImagePreprocessor.fill(image, manifest.input, inputBuffer)
         val t0 = System.nanoTime()
-        OnnxTensor.createTensor(env, FloatBuffer.wrap(input), shape).use { pixels ->
+        OnnxTensor.createTensor(env, inputBuffer, inputShape).use { pixels ->
             encoder.run(mapOf(encInput to pixels)).use { enc ->
                 val hidden = enc[0] as OnnxTensor
                 val t1 = System.nanoTime()
-                val ids = if (manifest.decoderCache == DecoderCache.None) decodeNoCache(hidden) else decodeMergedPast(hidden)
+                onEncoderDone?.invoke()
+                val ids = decode(hidden, maxSteps)
                 val t2 = System.nanoTime()
                 val raw = tokenizer.decode(ids.drop(1), skipSpecial = true).trim()
                 return Recognition(raw, postprocess(raw), ids.drop(1), (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000)
             }
         }
     }
+
+    /**
+     * Cheap dummy run (blank image, one decoder step) so the first real call does not pay for page-faulting the
+     * weights and spinning up the thread pool. Output is discarded.
+     */
+    fun warmUp() {
+        inputBuffer.clear()
+        for (i in 0 until inputBuffer.capacity()) inputBuffer.put(i, 0f)
+        OnnxTensor.createTensor(env, inputBuffer, inputShape).use { pixels ->
+            encoder.run(mapOf(encInput to pixels)).use { enc -> decode(enc[0] as OnnxTensor, 1) }
+        }
+    }
+
+    private fun decode(hidden: OnnxTensor, steps: Int): List<Int> =
+        if (manifest.decoderCache == DecoderCache.None) decodeNoCache(hidden, steps) else decodeMergedPast(hidden, steps)
 
     private fun postprocess(raw: String): String {
         var s = raw
@@ -101,9 +161,9 @@ class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
     }
 
     /** Whole prefix every step (decoderCache = none). */
-    private fun decodeNoCache(hidden: OnnxTensor): List<Int> {
+    private fun decodeNoCache(hidden: OnnxTensor, steps: Int): List<Int> {
         val ids = ArrayList<Int>().apply { add(manifest.bos) }
-        repeat(manifest.maxTokens) {
+        repeat(steps) {
             val arr = LongArray(ids.size) { ids[it].toLong() }
             OnnxTensor.createTensor(env, LongBuffer.wrap(arr), longArrayOf(1, arr.size.toLong())).use { idTensor ->
                 decoder.run(mapOf(decIds to idTensor, decHidden to hidden), setOf(logitsName)).use { out ->
@@ -117,7 +177,7 @@ class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
     }
 
     /** One token per step with past_key_values (decoderCache = merged_past). Mirrors the Python reference runner. */
-    private fun decodeMergedPast(hidden: OnnxTensor): List<Int> {
+    private fun decodeMergedPast(hidden: OnnxTensor, steps: Int): List<Int> {
         val ids = ArrayList<Int>().apply { add(manifest.bos) }
         val owned = ArrayList<OnnxTensor>() // initial empty tensors
         val past = HashMap<String, OnnxTensor>()
@@ -130,7 +190,7 @@ class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
                 past[n] = t
             }
             var useCache = false
-            repeat(manifest.maxTokens) {
+            repeat(steps) {
                 val idTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(ids.last().toLong())), longArrayOf(1, 1))
                 val flag = if (hasCacheFlag) OnnxTensor.createTensor(env, booleanArrayOf(useCache)) else null
                 try {
@@ -166,5 +226,10 @@ class VedRunner(val manifest: ModelManifest, dir: File) : AutoCloseable {
     override fun close() {
         runCatching { encoder.close() }
         runCatching { decoder.close() }
+    }
+
+    private companion object {
+        const val MAX_STEPS_UNCACHED = 96
+        const val MAX_STEPS_CACHED = 192
     }
 }

@@ -1,13 +1,11 @@
 package dev.ilgax.utils.remote
 
 import android.Manifest
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.PowerManager
-import android.view.accessibility.AccessibilityManager
 
 /** Non-UI actions and checks shared by the home card, the detail screen and the module. */
 internal object RemoteControl {
@@ -21,13 +19,9 @@ internal object RemoteControl {
         false
     }
 
-    fun accessibilityEnabled(context: Context): Boolean {
-        val am = context.getSystemService(AccessibilityManager::class.java)
-        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK).any {
-            it.resolveInfo.serviceInfo.packageName == context.packageName &&
-                it.resolveInfo.serviceInfo.name == LockAccessibilityService::class.java.name
-        }
-    }
+    /** The shared "Utils" accessibility service is switched on (or already connected). */
+    fun accessibilityEnabled(context: Context): Boolean =
+        RemoteA11y.service() != null || dev.ilgax.utils.core.a11y.A11y.isEnabled(context)
 
     fun checks(context: Context) = SetupChecks(
         bluetoothPermission = hasBluetoothPermission(context),

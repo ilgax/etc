@@ -31,12 +31,16 @@
     catch (e) { el.textContent = tex; }
   }
   function div(parent, cls) { var d = document.createElement('div'); d.className = cls; parent.appendChild(d); return d; }
-  function report() {
+  var lastSeq = 0;
+  function report(seq) {
     var h = Math.ceil(document.body.getBoundingClientRect().height);
-    if (window.Android && Android.height) Android.height(h);
+    if (window.Android && Android.height) Android.height(h, seq);
   }
-  // c = { preview, answers: [tex], notes: [text], steps: [{c, l}], fg, muted, accent }
-  function render(c) {
+  // The pooled WebView is created before it has a size; report again once it is laid out.
+  window.addEventListener('resize', function () { report(lastSeq); });
+  // c = { preview, answers: [tex], notes: [text], steps: [{c, l}], fg, muted, accent }; seq numbers the call so the app knows which one was painted
+  function render(c, seq) {
+    lastSeq = seq || 0;
     document.body.style.color = c.fg;
     var p = document.getElementById('preview');
     p.style.color = c.muted; p.textContent = '';
@@ -51,8 +55,8 @@
       var cap = div(box, 'cap'); cap.style.color = c.muted; cap.textContent = st.c;
       if (st.l) { var r = div(box, 'row'); put(r, st.l, false); }
     });
-    report();
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(report);
+    report(lastSeq);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { report(seq || 0); });
   }
 </script>
 </body>

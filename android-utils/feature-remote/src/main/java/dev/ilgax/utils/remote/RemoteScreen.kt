@@ -210,12 +210,7 @@ private fun SetupGroup(checks: SetupChecks, onSetup: (SetupItem) -> Unit) {
                     Text(stringResource(item.labelRes()), style = MaterialTheme.typography.bodyLarge)
                 }
                 if (item == SetupItem.Accessibility && !done) {
-                    Text(
-                        stringResource(R.string.remote_a11y_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    )
+                    dev.ilgax.utils.core.ui.components.A11ySetupNote()
                 }
             }
         }
