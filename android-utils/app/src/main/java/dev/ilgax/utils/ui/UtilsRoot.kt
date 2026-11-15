@@ -213,6 +213,7 @@ private fun HomeList(
                     selected = module.id == selectedId,
                     onClick = { onSelect(module.id) },
                     onToggle = { onToggle(module) },
+                    showSwitch = module.quickSwitch,
                 )
             }
         }

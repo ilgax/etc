@@ -44,6 +44,9 @@ interface UtilModule {
 
     val shortcut: ModuleShortcut? get() = null
 
+    /** False for modules with nothing to switch on or off; the home card then hides its switch. */
+    val quickSwitch: Boolean get() = true
+
     /** The app window became visible or hidden; modules may refresh or release resources. */
     fun onAppVisible(visible: Boolean) {}
 }

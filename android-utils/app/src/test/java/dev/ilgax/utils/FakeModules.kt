@@ -10,6 +10,11 @@ import dev.ilgax.utils.core.shizuku.ShizukuStatus
 import dev.ilgax.utils.hotspot.ApState
 import dev.ilgax.utils.hotspot.HotspotScreen
 import dev.ilgax.utils.hotspot.HotspotUiState
+import dev.ilgax.utils.math.MathActions
+import dev.ilgax.utils.math.MathScreen
+import dev.ilgax.utils.math.MathUiState
+import dev.ilgax.utils.math.ModelRow
+import dev.ilgax.utils.math.normalize.DotMeaning
 import dev.ilgax.tabremote.protocol.Status
 import dev.ilgax.utils.remote.PairingPanel
 import dev.ilgax.utils.remote.PairingStep
@@ -32,6 +37,7 @@ class FakeModule(
     override val summary: String,
     override val iconRes: Int,
     card: ModuleCardState,
+    override val quickSwitch: Boolean = true,
     private val detail: @Composable (PaddingValues, Modifier) -> Unit,
 ) : UtilModule {
     override val cardState: StateFlow<ModuleCardState> = MutableStateFlow(card)
@@ -65,6 +71,21 @@ object Fixtures {
         forceStop = true,
     )
     val remoteSetup = remoteListening.copy(checks = SetupChecks(true, true, true, false, false))
+
+    val mathReady = MathUiState(
+        shizuku = ShizukuStatus.Ready, accessibilityOn = false,
+        models = listOf(
+            ModelRow("bundled", "Pix2Text-MFR 1.5 (int8)", true, "34", true),
+            ModelRow("texteller-3-int8", "TexTeller 3 (int8)", false, "318", false),
+        ),
+        dot = DotMeaning.Multiply, corrections = true, correctionCount = 7,
+        tryText = "\\frac{x}{13}=\\frac{15+x}{16}=\\frac{35+x}{y}",
+    )
+
+    fun math(card: ModuleCardState, state: MathUiState = mathReady) = FakeModule(
+        "math", "Equation solver", "Circle handwritten math with the S Pen and see the answer next to it.",
+        dev.ilgax.utils.math.R.drawable.ic_math, card, quickSwitch = false,
+    ) { padding, mod -> MathScreen(state, MathActions(), padding, mod) }
 
     fun remote(card: ModuleCardState, state: RemoteUiState = remoteListening) = FakeModule(
         "remote", "Watch remote", "Lets your paired watch lock, ring and control this tablet over Bluetooth.",

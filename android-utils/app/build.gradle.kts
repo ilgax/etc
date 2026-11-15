@@ -13,8 +13,10 @@ android {
         applicationId = "dev.ilgax.utils"
         minSdk = 34
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+        // The target tablets are arm64; keeps the ONNX Runtime native libs of other ABIs out of the APK.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     signingConfigs {
@@ -39,6 +41,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Bundled ONNX models (feature-math) must stay uncompressed in the APK.
+    androidResources.noCompress += "onnx"
+
     testOptions.unitTests {
         isIncludeAndroidResources = true
         isReturnDefaultValues = true
@@ -59,6 +64,7 @@ dependencies {
     implementation(project(":feature-speaker"))
     implementation(project(":feature-hotspot"))
     implementation(project(":feature-remote"))
+    implementation(project(":feature-math"))
 
     debugImplementation(libs.compose.ui.test.manifest)
 

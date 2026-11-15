@@ -14,6 +14,7 @@ import dev.ilgax.utils.core.ModuleRegistry
 import dev.ilgax.utils.core.ModuleShortcut
 import dev.ilgax.utils.core.shizuku.ShizukuState
 import dev.ilgax.utils.hotspot.HotspotModule
+import dev.ilgax.utils.math.MathModule
 import dev.ilgax.utils.remote.RemoteModule
 import dev.ilgax.utils.speaker.SpeakerModule
 
@@ -29,6 +30,7 @@ class UtilsApplication : Application() {
             SpeakerModule(this),
             HotspotModule(this),
             RemoteModule(this),
+            MathModule(this),
         )
         publishShortcuts(registry.modules.mapNotNull { it.shortcut })
     }

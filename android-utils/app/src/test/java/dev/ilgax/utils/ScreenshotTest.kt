@@ -1,14 +1,33 @@
 package dev.ilgax.utils
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas as AndroidCanvas
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import dev.ilgax.utils.math.CardUi
+import dev.ilgax.utils.math.LocalKatexRenderer
+import dev.ilgax.utils.math.OverlayActions
+import dev.ilgax.utils.math.OverlayState
+import dev.ilgax.utils.math.SolveOverlay
+import dev.ilgax.utils.math.normalize.DotMeaning
+import dev.ilgax.utils.math.normalize.PxRect
+import dev.ilgax.utils.math.normalize.SolvePipeline
+import dev.ilgax.utils.math.CaptureProblem
 import dev.ilgax.utils.remote.PairingPanel
 import dev.ilgax.utils.remote.PairingStep
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -125,6 +144,82 @@ class ScreenshotTest {
                 }
             }
         }
+    }
+
+    // ---- Equation solver ----
+
+    private val mathCard = ModuleCardState(CardMode.On, "Ready · Shizuku · Pix2Text-MFR 1.5 (int8)")
+
+    @Test
+    @Config(qualifiers = "w411dp-h2400dp-xhdpi")
+    fun mathDetailPhoneLight() = shot("10-math-detail-phone-light", false, withKatex("try-light", detailPage(Fixtures.math(mathCard))))
+
+    @Test
+    @Config(qualifiers = "w411dp-h2400dp-night-xhdpi")
+    fun mathDetailPhoneDark() = shot("11-math-detail-phone-dark", true, withKatex("try-dark", detailPage(Fixtures.math(mathCard))))
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveResultTabletLight() = shot("12-solve-result-tablet-light", false, overlay("result-light", card = true))
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-night-hdpi")
+    fun solveResultTabletDark() = shot("13-solve-result-tablet-dark", true, overlay("result-dark", card = true))
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveLassoTabletLight() = shot("14-solve-lasso-tablet-light", false, overlay("result-light", card = false))
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveCaptureProblemTabletLight() = shot("15-solve-no-capture-tablet-light", false) {
+        val state = remember { OverlayState().apply { problem = CaptureProblem("Shizuku: UserService binder is not alive", true) } }
+        Box(Modifier.fillMaxSize()) {
+            Image(pageBitmap().asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+            SolveOverlay(state, OverlayActions())
+        }
+    }
+
+    /** KaTeX pre-rendered by headless Chrome from the same page and JSON the card's WebView gets (Robolectric cannot draw a WebView). */
+    private fun withKatex(fixture: String, content: @Composable () -> Unit): @Composable () -> Unit = {
+        val png = remember(fixture) { BitmapFactory.decodeStream(javaClass.getResourceAsStream("/katex/$fixture.png")!!).asImageBitmap() }
+        CompositionLocalProvider(
+            LocalKatexRenderer provides { _, m -> Image(png, null, m.fillMaxWidth(), contentScale = ContentScale.FillWidth) },
+            content = content,
+        )
+    }
+
+    /** A fake "Flexcil page": white, with one of the user's handwritten samples on it. */
+    private fun pageBitmap(): Bitmap {
+        val sample = BitmapFactory.decodeStream(javaClass.getResourceAsStream("/samples/s05.jpg")!!)
+        val page = Bitmap.createBitmap(1920, 1200, Bitmap.Config.ARGB_8888)
+        val c = AndroidCanvas(page)
+        c.drawColor(android.graphics.Color.WHITE)
+        val rule = android.graphics.Paint().apply { color = 0xFFD8DEE8.toInt(); strokeWidth = 2f }
+        for (y in 140..1200 step 70) c.drawLine(0f, y.toFloat(), 1920f, y.toFloat(), rule)
+        c.drawBitmap(sample, null, android.graphics.Rect(200, 330, 200 + 860, 330 + 359), null)
+        return page
+    }
+
+    private fun overlay(fixture: String, card: Boolean): @Composable () -> Unit = withKatex(fixture) {
+        val state = remember {
+            OverlayState().apply {
+                screenshot = pageBitmap().asImageBitmap()
+                // freehand-looking loop around the equation (window px; hdpi 1.5 gives a 1920x1200 window)
+                val cx = 630f; val cy = 510f
+                lasso = (0 until 72).map { i ->
+                    val a = i / 72f * 6.2832f
+                    val wobble = 1f + 0.05f * kotlin.math.sin(a * 5f)
+                    Offset(cx + 470f * wobble * kotlin.math.cos(a), cy + 225f * wobble * kotlin.math.sin(a))
+                }
+                anchor = PxRect(cx - 494f, cy - 236f, cx + 494f, cy + 236f)
+                if (card) {
+                    val r = SolvePipeline.run("2x^{2}+144=400", DotMeaning.Multiply)
+                    this.card = CardUi(latex = "2x^{2}+144=400", reading = false, result = r, stepsOpen = true)
+                }
+            }
+        }
+        SolveOverlay(state, OverlayActions())
     }
 
     /** Single-column detail page, as shown after tapping a card on a phone. */

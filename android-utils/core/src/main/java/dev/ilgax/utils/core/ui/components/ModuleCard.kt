@@ -103,6 +103,7 @@ fun ModuleCard(
     onClick: () -> Unit,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    showSwitch: Boolean = true,
 ) {
     val tone = toneFor(mode)
     val elevation = if (mode == CardMode.On) 2.dp else 0.dp
@@ -127,7 +128,7 @@ fun ModuleCard(
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(status, style = MaterialTheme.typography.bodyMedium, color = statusColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            SwitchOrProgress(
+            if (showSwitch) SwitchOrProgress(
                 checked = mode == CardMode.On,
                 busy = mode == CardMode.Busy,
                 enabled = mode == CardMode.On || mode == CardMode.Off,

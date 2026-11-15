@@ -10,14 +10,17 @@ It installs next to the older apps, but **turn the old Speaker Kill Switch OFF a
 |---|---|---|
 | `:feature-speaker` Speaker kill switch | Blocks the built-in speaker for every audio product strategy (`setDeviceAsNonDefaultForStrategy`), pins the speaker `STREAM_MUSIC` volume to 0 (saved index restored on OFF), optional pause on Bluetooth disconnect. Foreground service re-applies on volume/device/Shizuku events; restarts at boot; Quick Settings tile; shortcut. | Only `STREAM_MUSIC` is pinned (alarm/ring/call can still use the speaker). Software block: a Buds disconnect may leak a moment of audio. Shizuku must be restarted after every reboot; until then only the volume-only fallback runs. Turning OFF without Shizuku cannot remove the routing block until Shizuku is ready again. |
 | `:feature-hotspot` Wi-Fi hotspot | Starts/stops Wi-Fi tethering via the hidden `TetheringManager` in a Shizuku UserService (shell uid); shows name, security, band, devices, shared Wi-Fi, masked password, open-network warning; Quick Settings tile; shortcut. | Needs Shizuku. Only works on channels the regulatory config allows (confirmed 2.4 GHz on a Tab S9 FE+). Shizuku must be restarted after every reboot. |
+| `:feature-math` Equation solver | Circle a handwritten equation with the S Pen: "Solve" (launcher alias, so it appears in Air Command; also a QS tile and a shortcut) screenshots the screen after a 300 ms delay (Shizuku `screencap` UserService, or the accessibility service `takeScreenshot` as fallback), shows it frozen, takes a freehand lasso, runs an on-device ONNX image-to-LaTeX model (bundled Pix2Text-MFR 1.5 int8; swappable through a `model.json` manifest and zip import), normalises the LaTeX and solves it with a pure-Kotlin exact solver (linear, quadratic with surds, rational equations, chained equalities, 2x2 systems, simplification) with steps and a KaTeX preview. Edits re-solve live; corrections can be logged locally for fine-tuning and exported as a zip. No INTERNET permission. | `\times` is read as the variable x; digit.digit is multiply or decimal (setting). Handwriting recognition is only as good as the model (4 of 10 user samples exact). Needs Shizuku or the accessibility service enabled. |
 | `:feature-remote` Watch remote | Tablet receiver for the Wear OS "Tab Remote" watch app: BLE GATT server, signed commands (lock, media, volume, ring, close/open/switch app). Setup checklist, pairing sheet, four app slots, local test buttons. Works with the existing `watch-remote/dist/tab-remote-watch-0.1.0-debug.apk`. | Needs the accessibility service (lock / open / close). Closing apps force-stops them via Shizuku when it is ready; otherwise it presses Home and `killBackgroundProcesses` (process may survive, app stays in Recents). |
 
 ## Install and first run
 
-1. Install `dist/utils-0.1.0-debug.apk` (signed with the shared debug key, so later builds update in place).
+1. Install `dist/utils-0.2.0-debug.apk` (arm64 only) (signed with the shared debug key, so later builds update in place).
 2. Start Shizuku (wireless debugging) and open Utils; use the banner to grant Shizuku permission. Allow notifications when asked.
-3. Quick Settings: edit tiles and add **Speaker kill** and **Hotspot**. Long-press the launcher icon for the **Speaker switch** and **Hotspot** shortcuts.
+3. Quick Settings: edit tiles and add **Speaker kill**, **Hotspot** and **Solve**. Long-press the launcher icon for the **Speaker switch** and **Hotspot** shortcuts.
 4. Watch remote: open the module and work through Setup (Bluetooth permissions, notifications, Bluetooth on, accessibility, battery exemption). For a sideloaded app, allow restricted settings first: App info, three-dot menu. Then "Pair a watch", compare the 6-digit code with the watch, confirm on the tablet, then on the watch.
+
+5. Equation solver: open the module and finish Setup (Shizuku, or enable the accessibility service "Utils – screen capture for Solve"). Then add it to the S Pen menu: Air command → Settings → Shortcuts → add **Solve**. Try the solver with no model in the "Try it" field.
 
 ## Adding a module
 
@@ -32,13 +35,15 @@ It installs next to the older apps, but **turn the old Speaker Kill Switch OFF a
 ./gradlew --no-daemon :protocol:test testDebugUnitTest :app:assembleDebug :app:lintDebug
 ./gradlew --no-daemon :app:recordRoborazziDebug     # rewrites screenshots/*.png
 ```
-JDK 17+, Android SDK (platform 36), `local.properties` with `sdk.dir`. `:protocol` is the pure-JVM wire protocol from `../watch-remote/protocol`, included in place and not copied (its build output goes to `build/protocol`). Robolectric downloads its Android jar at first test run; `-Probolectric.repo=<maven mirror>` overrides the source on restricted networks.
+JDK 17+, Android SDK (platform 36), `local.properties` with `sdk.dir`. `:protocol` is the pure-JVM wire protocol from `../watch-remote/protocol`, included in place and not copied (its build output goes to `build/protocol`). `scripts/render-katex-fixtures.sh` regenerates the KaTeX PNGs used by the math screenshots (headless Chrome; run after `:feature-math:testDebugUnitTest`). Robolectric downloads its Android jar at first test run; `-Probolectric.repo=<maven mirror>` overrides the source on restricted networks.
 
 ## Verification status
 
 Device-confirmed logic carried over (by the owner, on other builds):
 - Speaker: the whole controller (hidden `IAudioService` calls through `ShizukuBinderWrapper`, ordering, fallbacks, diagnostics) on Tab S9 FE, Android 16.
 - Hotspot: context bootstrap, `TetheringManager` construction, `TetheringRequest`, `startTethering` callback, status reads, on Tab S9 FE+ (SDK 36), run through `app_process`.
+
+Not confirmed on any device (equation solver): the Shizuku `screencap` UserService, the accessibility `takeScreenshot` path, whether the "Solve" alias shows in Air Command, the 300 ms capture delay, on-device latency (desktop: ~0.2 s encoder, 0.05-0.1 s decoder for short equations), the WebView KaTeX card, the lasso with a real S Pen, and the transparent no-flicker launch. The solver, normaliser, tokenizer, preprocessing and the real model on three samples are covered by JVM tests.
 
 Not confirmed on any device:
 - Hotspot `stop`, the shell-bound `WifiManager` upstream read, the client count (same as the CLI).

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- No INTERNET permission on purpose: recognition and the corrections log stay on the device. -->
+
+    <application>
+        <activity
+            android:name=".SolveActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|density|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Utils.Solve"
+            android:windowSoftInputMode="adjustNothing" />
+
+        <!-- S Pen Air Command only lists launcher apps, so Solve gets its own launcher entry and icon. -->
+        <activity-alias
+            android:name=".SolveLauncher"
+            android:exported="true"
+            android:icon="@mipmap/ic_solve_launcher"
+            android:label="@string/math_alias_label"
+            android:targetActivity=".SolveActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <service
+            android:name=".SolveTile"
+            android:exported="true"
+            android:icon="@drawable/ic_math"
+            android:label="@string/math_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".ScreenCaptureAccessibilityService"
+            android:exported="true"
+            android:label="@string/math_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config_screencap" />
+        </service>
+    </application>
+</manifest>

@@ -1,0 +1,7 @@
+Pix2Text-MFR 1.5 (mathematical formula recognition), by breezedeus.
+Source: https://huggingface.co/breezedeus/pix2text-mfr-1.5 (code: https://github.com/breezedeus/Pix2Text)
+Licence: MIT (see the licence field in README.md, which is the upstream model card, kept unchanged).
+
+encoder_model.onnx and decoder_model.onnx are the upstream ONNX exports after dynamic int8 quantisation
+(onnxruntime quantize_dynamic). tokenizer.json, config.json, special_tokens_map.json and tokenizer_config.json are unchanged.
+model.json is added by this app and describes how to run the files.

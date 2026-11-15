@@ -1,0 +1,99 @@
+<resources>
+    <string name="math_title">Equation solver</string>
+    <string name="math_summary">Circle handwritten math with the S Pen and see the answer next to it.</string>
+    <string name="math_alias_label">Solve</string>
+    <string name="math_tile_label">Solve</string>
+    <string name="math_shortcut_short">Solve</string>
+    <string name="math_shortcut_long">Solve an equation</string>
+    <string name="math_a11y_label">Utils – screen capture for Solve</string>
+    <string name="math_a11y_description">Lets the Solve tool take a screenshot of the current screen. It does not read or change anything else.</string>
+
+    <string name="math_card_ready_shizuku">Ready · Shizuku · %1$s</string>
+    <string name="math_card_ready_a11y">Ready · Accessibility · %1$s</string>
+    <string name="math_card_not_ready">Not ready · needs Shizuku or accessibility</string>
+    <string name="math_card_no_model">Capture ready · no model installed</string>
+
+    <string name="math_headline_ready">Ready to solve</string>
+    <string name="math_headline_not_ready">Not ready</string>
+    <string name="math_supporting_shizuku">Screenshots are taken with Shizuku.</string>
+    <string name="math_supporting_a11y">Screenshots are taken with the accessibility service.</string>
+    <string name="math_supporting_none">Turn on Shizuku or the accessibility service to take screenshots.</string>
+    <string name="math_solve_now">Solve now</string>
+
+    <string name="math_group_setup">Setup</string>
+    <string name="math_capture_active">Capture method</string>
+    <string name="math_method_shizuku">Shizuku</string>
+    <string name="math_method_accessibility">Accessibility service</string>
+    <string name="math_method_none">None available</string>
+    <string name="math_setup_shizuku">Shizuku (preferred)</string>
+    <string name="math_setup_shizuku_ready">Ready</string>
+    <string name="math_setup_shizuku_permission">Permission needed</string>
+    <string name="math_setup_shizuku_not_running">Not running</string>
+    <string name="math_setup_shizuku_not_installed">Not installed</string>
+    <string name="state_ready_pill">Active</string>
+    <string name="math_setup_a11y">Accessibility service (fallback)</string>
+    <string name="math_setup_a11y_on">On</string>
+    <string name="math_setup_a11y_off">Off · \"Utils – screen capture for Solve\"</string>
+    <string name="math_action_shizuku_grant">Grant</string>
+    <string name="math_action_shizuku_open">Open Shizuku</string>
+    <string name="math_action_a11y">Open settings</string>
+    <string name="math_setup_air_command">Add Solve to Air Command</string>
+    <string name="math_setup_air_command_steps">Air command → Settings → Shortcuts → add Solve</string>
+
+    <string name="math_group_model">Model</string>
+    <string name="math_model_bundled">Bundled</string>
+    <string name="math_model_imported">Imported</string>
+    <string name="math_model_selected">In use</string>
+    <string name="math_model_select">Use</string>
+    <string name="math_model_delete">Delete model</string>
+    <string name="math_model_import">Import model (.zip)</string>
+    <string name="math_model_import_hint">A zip with model.json and the files it names (encoder, decoder, tokenizer.json).</string>
+    <string name="math_model_import_error">Couldn\'t import the model</string>
+    <string name="math_model_imported_ok">Imported %1$s</string>
+    <string name="math_model_size">%1$s MB</string>
+
+    <string name="math_group_dot">Dot between numbers means</string>
+    <string name="math_dot_multiply">Multiply</string>
+    <string name="math_dot_multiply_hint">15.13 is read as 15 · 13 (default)</string>
+    <string name="math_dot_decimal">Decimal point</string>
+    <string name="math_dot_decimal_hint">15.13 is read as fifteen point thirteen</string>
+
+    <string name="math_group_corrections">Corrections log</string>
+    <string name="math_corrections_save">Save corrections</string>
+    <string name="math_corrections_save_hint">When you edit the recognised LaTeX and it solves, the crop and both texts are kept on this device for later fine-tuning. Nothing is sent anywhere.</string>
+    <plurals name="math_corrections_count">
+        <item quantity="one">%1$d correction saved</item>
+        <item quantity="other">%1$d corrections saved</item>
+    </plurals>
+    <string name="math_corrections_export">Export as zip</string>
+    <string name="math_corrections_delete">Delete all</string>
+    <string name="math_corrections_exported">Exported %1$d corrections</string>
+
+    <string name="math_group_try">Try it</string>
+    <string name="math_try_label">LaTeX</string>
+    <string name="math_try_hint">Type an equation, e.g. 2x^{2}+144=400</string>
+
+    <string name="math_footnote">Everything runs on this device. Solve opens from Air Command, the quick settings tile or the app shortcut.</string>
+
+    <!-- Overlay -->
+    <string name="math_overlay_hint">Circle the equation</string>
+    <string name="math_card_title">Equation</string>
+    <string name="math_card_reading">Reading…</string>
+    <string name="math_card_latex">LaTeX</string>
+    <string name="math_card_steps">Steps</string>
+    <string name="math_card_copy">Copy</string>
+    <string name="math_card_copied">Copied</string>
+    <string name="math_card_retry">Re-circle</string>
+    <string name="math_card_close">Close</string>
+    <string name="math_card_cant_solve">Can\'t solve this yet</string>
+    <string name="math_card_cant_solve_reason">Because %1$s. Edit the LaTeX above to fix it.</string>
+    <string name="math_card_no_text">Nothing was recognised. Edit the LaTeX or re-circle.</string>
+    <string name="math_card_recognition_failed">Recognition failed: %1$s</string>
+
+    <string name="math_fail_title">Can\'t take a screenshot</string>
+    <string name="math_fail_body">Solve needs either Shizuku or the accessibility service to capture the screen.</string>
+    <string name="math_fail_detail">Last error: %1$s</string>
+    <string name="math_fail_open_shizuku">Open Shizuku</string>
+    <string name="math_fail_open_a11y">Accessibility settings</string>
+    <string name="math_fail_close">Close</string>
+</resources>

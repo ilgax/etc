@@ -12,7 +12,7 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Utils"
-include(":app", ":core", ":feature-speaker", ":feature-hotspot", ":feature-remote")
+include(":app", ":core", ":feature-speaker", ":feature-hotspot", ":feature-remote", ":feature-math")
 
 // Pure-JVM wire protocol shared with the watch app; lives in the sibling project and is not copied.
 include(":protocol")
