@@ -1,0 +1,1 @@
+-keep class dev.ilgax.utils.hotspot.HotspotUserService { public <init>(...); }

@@ -1,0 +1,25 @@
+<resources>
+    <string name="toggle_failed">Couldn\'t toggle: %1$s</string>
+
+    <string name="shizuku_not_installed">Shizuku isn\'t installed</string>
+    <string name="shizuku_not_installed_detail">Utils needs Shizuku for its system-level actions.</string>
+    <string name="shizuku_not_running">Shizuku isn\'t running</string>
+    <string name="shizuku_not_running_detail">Start it again (for example through wireless debugging), then come back.</string>
+    <string name="shizuku_permission_needed">Shizuku needs your permission</string>
+    <string name="shizuku_permission_needed_detail">Allow Utils to use Shizuku.</string>
+    <string name="shizuku_action_install">Install</string>
+    <string name="shizuku_action_open">Open Shizuku</string>
+    <string name="shizuku_action_grant">Grant permission</string>
+
+    <string name="state_on">On</string>
+    <string name="state_off">Off</string>
+    <string name="state_unavailable">Unavailable</string>
+    <string name="state_working">Working</string>
+    <string name="back">Back</string>
+
+    <string name="diagnostics">Diagnostics</string>
+    <string name="diagnostics_copy">Copy diagnostics</string>
+    <string name="diagnostics_empty">Nothing recorded yet.</string>
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+</resources>

@@ -1,0 +1,47 @@
+# Utils
+
+One Android app (`dev.ilgax.utils`, Galaxy Tab S9 FE class tablets, Android 14+) that bundles small system tools as independent modules, with a Material 3 Compose UI that adapts from phone to 12-inch tablet. Everything privileged goes through [Shizuku](https://shizuku.rikka.app/).
+
+It installs next to the older apps, but **turn the old Speaker Kill Switch OFF and uninstall it first**: two apps pinning the speaker would fight. Likewise uninstall the standalone **Tab Remote Receiver** and re-pair the watch (keys are per app).
+
+## Modules
+
+| Module | What it does | Limits |
+|---|---|---|
+| `:feature-speaker` Speaker kill switch | Blocks the built-in speaker for every audio product strategy (`setDeviceAsNonDefaultForStrategy`), pins the speaker `STREAM_MUSIC` volume to 0 (saved index restored on OFF), optional pause on Bluetooth disconnect. Foreground service re-applies on volume/device/Shizuku events; restarts at boot; Quick Settings tile; shortcut. | Only `STREAM_MUSIC` is pinned (alarm/ring/call can still use the speaker). Software block: a Buds disconnect may leak a moment of audio. Shizuku must be restarted after every reboot; until then only the volume-only fallback runs. Turning OFF without Shizuku cannot remove the routing block until Shizuku is ready again. |
+| `:feature-hotspot` Wi-Fi hotspot | Starts/stops Wi-Fi tethering via the hidden `TetheringManager` in a Shizuku UserService (shell uid); shows name, security, band, devices, shared Wi-Fi, masked password, open-network warning; Quick Settings tile; shortcut. | Needs Shizuku. Only works on channels the regulatory config allows (confirmed 2.4 GHz on a Tab S9 FE+). Shizuku must be restarted after every reboot. |
+| `:feature-remote` Watch remote | Tablet receiver for the Wear OS "Tab Remote" watch app: BLE GATT server, signed commands (lock, media, volume, ring, close/open/switch app). Setup checklist, pairing sheet, four app slots, local test buttons. Works with the existing `watch-remote/dist/tab-remote-watch-0.1.0-debug.apk`. | Needs the accessibility service (lock / open / close). Closing apps force-stops them via Shizuku when it is ready; otherwise it presses Home and `killBackgroundProcesses` (process may survive, app stays in Recents). |
+
+## Install and first run
+
+1. Install `dist/utils-0.1.0-debug.apk` (signed with the shared debug key, so later builds update in place).
+2. Start Shizuku (wireless debugging) and open Utils; use the banner to grant Shizuku permission. Allow notifications when asked.
+3. Quick Settings: edit tiles and add **Speaker kill** and **Hotspot**. Long-press the launcher icon for the **Speaker switch** and **Hotspot** shortcuts.
+4. Watch remote: open the module and work through Setup (Bluetooth permissions, notifications, Bluetooth on, accessibility, battery exemption). For a sideloaded app, allow restricted settings first: App info, three-dot menu. Then "Pair a watch", compare the 6-digit code with the watch, confirm on the tablet, then on the watch.
+
+## Adding a module
+
+1. New Android library `:feature-foo` depending on `:core` only; implement `UtilModule` (card state, `toggle()`, `Detail`).
+2. Declare its tile/service/activities in its own manifest.
+3. `include(":feature-foo")` in `settings.gradle.kts`, `implementation(project(":feature-foo"))` in `:app`.
+4. Add one line to `ModuleRegistry.of(...)` in `UtilsApplication`. Home card, detail pane and dynamic shortcut follow automatically.
+
+## Build
+
+```
+./gradlew --no-daemon :protocol:test testDebugUnitTest :app:assembleDebug :app:lintDebug
+./gradlew --no-daemon :app:recordRoborazziDebug     # rewrites screenshots/*.png
+```
+JDK 17+, Android SDK (platform 36), `local.properties` with `sdk.dir`. `:protocol` is the pure-JVM wire protocol from `../watch-remote/protocol`, included in place and not copied (its build output goes to `build/protocol`). Robolectric downloads its Android jar at first test run; `-Probolectric.repo=<maven mirror>` overrides the source on restricted networks.
+
+## Verification status
+
+Device-confirmed logic carried over (by the owner, on other builds):
+- Speaker: the whole controller (hidden `IAudioService` calls through `ShizukuBinderWrapper`, ordering, fallbacks, diagnostics) on Tab S9 FE, Android 16.
+- Hotspot: context bootstrap, `TetheringManager` construction, `TetheringRequest`, `startTethering` callback, status reads, on Tab S9 FE+ (SDK 36), run through `app_process`.
+
+Not confirmed on any device:
+- Hotspot `stop`, the shell-bound `WifiManager` upstream read, the client count (same as the CLI).
+- The Shizuku UserService plumbing (bind, AIDL parcelable, destroy transaction, running the engine on its own looper thread, process lifetime), tiles, shortcuts, notification/permission flow.
+- The whole Compose UI on a device (screenshots are Robolectric renders with a fixed palette; dynamic color, haptics, predictive back, split-screen and rotation are untested).
+- Watch remote: the BLE/GATT/pairing/command code is the original and has never run on hardware; the Shizuku force-stop (`IActivityManager.forceStopPackage`) and the dependency-injected command path are new and untested.
