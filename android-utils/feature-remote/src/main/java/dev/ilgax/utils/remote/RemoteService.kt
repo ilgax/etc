@@ -154,6 +154,9 @@ class RemoteService : Service() {
     fun cancelPairing() = pairing.cancel()
     fun confirmPairing() = pairing.confirm()
 
+    /** Pings subscribed watches that an update offer is available (they then fetch it authenticated). */
+    fun notifyOffer() = gatt.notifyOffer()
+
     private fun notifyForeground() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
@@ -189,6 +192,8 @@ class RemoteService : Service() {
         @Volatile
         var instance: RemoteService? = null
             private set
+
+        fun isRunning() = instance != null
 
         fun hasBluetoothPermissions(context: Context) =
             context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&

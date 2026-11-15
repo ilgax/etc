@@ -11,6 +11,11 @@ object Protocol {
 
     val APPS_UUID: UUID = UUID.fromString("5b0d1f6e-7c3a-4e92-9a51-3f8e2d6b4c07")
 
+    /** Readable (long read) + notify. Read: authenticated update offer after GET_OFFER. Notify: unauthenticated "check for an offer" ping. */
+    val OFFER_UUID: UUID = UUID.fromString("9c4e7a12-3b58-4f6d-8e21-6a0d5b7c9f34")
+    /** Standard Client Characteristic Configuration descriptor. */
+    val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
     const val COMPANY_ID = 0xFFFF
     const val TABLET_ID_SIZE = 4
     const val NONCE_SIZE = 16

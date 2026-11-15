@@ -26,6 +26,11 @@ class RemotePrefs(context: Context) {
         get() = sp.getBoolean(KEY_BG, false)
         set(v) = sp.edit().putBoolean(KEY_BG, v).apply()
 
+    /** versionCode the watch last reported with HELLO; -1 = never (old watch build, or not seen yet). */
+    var watchVersion: Int
+        get() = sp.getInt(KEY_WATCH_VERSION, -1)
+        set(v) = sp.edit().putInt(KEY_WATCH_VERSION, v).apply()
+
     fun slot(i: Int): String? = sp.getString("slot_$i", null)
 
     fun setSlot(i: Int, pkg: String?) {
@@ -36,5 +41,6 @@ class RemotePrefs(context: Context) {
         const val KEY_ID = "tablet_id"
         const val KEY_PAIRED = "paired"
         const val KEY_BG = "run_in_background"
+        const val KEY_WATCH_VERSION = "watch_version"
     }
 }

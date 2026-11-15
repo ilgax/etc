@@ -9,6 +9,8 @@ import android.os.Looper
 import android.view.KeyEvent
 import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.Status
+import dev.ilgax.tabremote.protocol.UpdateCodec
+import dev.ilgax.tabremote.protocol.UpdateReport
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -21,7 +23,9 @@ class CommandExecutor(context: Context, private val killer: AppKiller = AppKille
 
     fun execute(command: Command, args: ByteArray = ByteArray(0)): Status = try {
         when (command) {
-            Command.PING, Command.SYNC_APPS -> Status.SUCCESS
+            Command.PING, Command.SYNC_APPS, Command.GET_OFFER -> Status.SUCCESS // GET_OFFER's grant is handled by the GATT server
+            Command.HELLO -> UpdateCodec.decodeVersion(args)?.let { UpdateHost.get(context).onHello(it); Status.SUCCESS } ?: Status.FAILED
+            Command.UPDATE_STATE -> UpdateReport.decode(args)?.let { UpdateHost.get(context).onReport(it); Status.SUCCESS } ?: Status.FAILED
             Command.LOCK -> lock()
             Command.PLAY_PAUSE -> playPause()
             Command.VOLUME_UP -> volume(AudioManager.ADJUST_RAISE)

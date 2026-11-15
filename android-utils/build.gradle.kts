@@ -13,6 +13,8 @@ plugins {
 
 // :protocol lives in ../watch-remote; keep its build output inside this project.
 project(":protocol").layout.buildDirectory.set(layout.projectDirectory.dir("build/protocol"))
+// Same for :wear (the watch app, bundled as an asset of :feature-remote).
+project(":wear").layout.buildDirectory.set(layout.projectDirectory.dir("build/wear"))
 
 // Settings shared by every Android library module.
 subprojects {

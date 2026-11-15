@@ -128,6 +128,27 @@ class ScreenshotTest {
         detailPage(Fixtures.remote(remoteCardOn, Fixtures.remoteSetup)),
     )
 
+    @Test
+    @Config(qualifiers = "w411dp-h1900dp-xhdpi")
+    fun watchAppUpdateAvailablePhoneLight() = shot(
+        "17-watch-app-update-available-phone-light", false,
+        detailPage(Fixtures.remote(remoteCardOn, Fixtures.remoteUpdateAvailable)),
+    )
+
+    @Test
+    @Config(qualifiers = "w411dp-h1900dp-xhdpi")
+    fun watchAppUpToDatePhoneLight() = shot(
+        "18-watch-app-up-to-date-phone-light", false,
+        detailPage(Fixtures.remote(remoteCardOn, Fixtures.remoteUpToDate)),
+    )
+
+    @Test
+    @Config(qualifiers = "w411dp-h1900dp-night-xhdpi")
+    fun watchAppDownloadingPhoneDark() = shot(
+        "19-watch-app-downloading-phone-dark", true,
+        detailPage(Fixtures.remote(remoteCardOn, Fixtures.remoteUpdateDownloading)),
+    )
+
     /** The sheet content on a dimmed detail page (Robolectric cannot capture the sheet's own window). */
     @Test
     @Config(qualifiers = "w411dp-h891dp-xhdpi")

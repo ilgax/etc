@@ -8,7 +8,7 @@ Modules
 
 - `protocol/` pure Kotlin/JVM: constants, command frames, pairing crypto, advertisement and app-slot encoding (JUnit tests).
 - `tablet/` "Tab Remote Receiver": foreground service, BLE peripheral (advertiser + GATT server), accessibility service.
-- `wear/` "Tab Remote": BLE central, app, tile, "Lock Tablet" launcher shortcut.
+- `wear/` "Tab Remote": BLE central, app, tile, tile. One launcher entry.
 
 ## Build
 
@@ -16,7 +16,7 @@ Modules
 ./gradlew --no-daemon :protocol:test :tablet:assembleDebug :wear:assembleDebug :tablet:lintDebug :wear:lintDebug
 ```
 
-APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist/tab-remote-watch-0.1.0-debug.apk` (watch). `local.properties` must contain `sdk.dir=/opt/android-sdk` (or your SDK path).
+APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist/tab-remote-watch-0.2.0-debug.apk` (watch). `local.properties` must contain `sdk.dir=/opt/android-sdk` (or your SDK path).
 
 ## Install
 
@@ -25,7 +25,7 @@ APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist
   ```
   adb pair <ip>:<pairing-port>        # enter the pairing code shown on the watch
   adb connect <ip>:<port>
-  adb install -r dist/tab-remote-watch-0.1.0-debug.apk
+  adb install -r dist/tab-remote-watch-0.2.0-debug.apk
   ```
 
 ## First-time setup on the tablet
@@ -51,7 +51,7 @@ Optional: under "Apps to open from the watch" choose up to four apps (slots). Th
 
 - App: buttons for Lock, Play/Pause, Volume +/-, Ring (toggle, auto-stops after 30 s), Close app, one button per configured app slot, Sync apps, Re-pair. The crown/bezel scrolls the list.
 - Tile: add the "Tab Remote" tile (Lock, Play, Vol -, Vol +, Ring, Close app). Slot apps are not on the tile.
-- "Lock Tablet" shortcut: a launcher entry that locks immediately. To map it to a hardware button: on the watch go to Settings > Advanced features > Customize buttons > Double press Home button (names vary by watch) and pick "Lock Tablet".
+- Lock is the first button in the app and on the tile (there is no separate launcher entry).
 
 ### Commands
 
@@ -74,6 +74,21 @@ Result codes: 0 success, 0x05 auth failed, 0x06 unknown command, 0x90 failed, 0x
 - Choose apps for slots 1 to 4 on the tablet. Then tap "Sync apps" on the watch (it also runs after pairing). The watch then shows one button per non-empty slot. Labels are only readable by the paired watch, after a signed SYNC_APPS.
 - The toggle "Close current app first" (above the slot buttons, off by default) makes the slot buttons read "Switch to <app>" and send SWITCH_APP instead of OPEN_APP. Having nothing to close is not an error for SWITCH_APP.
 - KILL_APP / SWITCH_APP limitation: the previous app is ended with `killBackgroundProcesses`, which only ends its process if nothing (for example a foreground service) keeps it alive. The app also stays in Recents. The foreground app is never closed if it is this app, the launcher or System UI.
+
+## Watch app updates from Utils (Wi-Fi)
+
+Utils (`android-utils`, `:feature-remote`) bundles this watch APK and can push it to the watch, so adb is needed only once.
+
+One-time setup (adb, wireless debugging on the watch):
+```
+adb install -r dist/tab-remote-watch-0.2.0-debug.apk
+adb shell appops set dev.ilgax.tabremote.wear REQUEST_INSTALL_PACKAGES allow
+```
+The second command allows Tab Remote to install packages; without it the watch shows this exact command instead of installing.
+
+Flow: open Tab Remote on the watch (it reports its versionCode with HELLO), then in Utils > Watch remote > Watch app tap "Update watch app". Utils starts a one-shot HTTP server (random token path, stops after one full download or 10 min) and offers it over BLE (GET_OFFER, then a long read of the OFFER characteristic, HMAC-authenticated and bound to that frame's nonce). The watch asks Android for a Wi-Fi network, downloads from the offered tablet addresses, checks the SHA-256 from the authenticated offer, and installs with PackageInstaller (same signing key required, so the APK is signed with `keystore/debug.keystore`). If the tap was under 3 minutes ago and Tab Remote is open it starts by itself; otherwise the app shows "Update to vN". The watch must be on the tablet's hotspot or the same Wi-Fi.
+
+New commands: HELLO (10, 3 arg bytes versionCode), GET_OFFER (11), UPDATE_STATE (12, phase + value). Old peers answer 0x06, which is handled. OFFER characteristic `9c4e7a12-3b58-4f6d-8e21-6a0d5b7c9f34` (read + notify; the notification is a content-free ping).
 
 ## Security model
 

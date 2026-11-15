@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -97,6 +99,8 @@ fun RemoteScreen(
             }
         }
 
+        state.watchApp?.let { WatchAppGroup(it, state.paired, actions) }
+
         SlotsGroup(state.slots, actions)
 
         SettingsGroup(title = stringResource(R.string.remote_group_test)) {
@@ -157,6 +161,72 @@ fun RemoteScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmUnpair = false }) { Text(stringResource(R.string.remote_btn_cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun WatchAppGroup(app: WatchAppUi, paired: Boolean, actions: RemoteActions) {
+    var confirm by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
+    val update = app.update
+    val status = when (update) {
+        is WatchUpdateState.Downloading -> stringResource(app.statusRes(), update.percent)
+        else -> stringResource(app.statusRes())
+    }
+    val problem = update is WatchUpdateState.Failed || update is WatchUpdateState.TimedOut
+    SettingsGroup(title = stringResource(R.string.remote_group_watch_app)) {
+        SettingsRow(
+            label = stringResource(R.string.remote_app_bundled),
+            value = stringResource(R.string.remote_app_version, app.bundledName, app.bundledCode),
+            iconRes = R.drawable.ic_watch,
+        )
+        SettingsRow(
+            label = stringResource(R.string.remote_app_on_watch),
+            value = app.reportedCode?.let { stringResource(R.string.remote_app_build, it) } ?: stringResource(R.string.remote_app_unknown),
+            iconRes = CoreR.drawable.ic_info,
+        )
+        SettingsRow(
+            label = stringResource(R.string.remote_app_status),
+            iconRes = when {
+                problem -> CoreR.drawable.ic_warning
+                app.upToDate && !app.active -> CoreR.drawable.ic_check
+                else -> CoreR.drawable.ic_refresh
+            },
+            iconTint = if (problem) colors.error else if (app.upToDate && !app.active) colors.primary else Color.Unspecified,
+        ) {
+            Text(status, style = MaterialTheme.typography.bodyLarge)
+            if (update is WatchUpdateState.Downloading) {
+                LinearProgressIndicator(
+                    progress = { update.percent / 100f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
+            if (app.active) {
+                OutlinedButton(onClick = actions.onCancelUpdate) { Text(stringResource(R.string.remote_app_btn_cancel)) }
+            } else {
+                FilledTonalButton(
+                    enabled = paired,
+                    onClick = { if (app.updateAvailable) actions.onUpdateWatch() else confirm = true },
+                ) { Text(stringResource(R.string.remote_app_btn_update)) }
+            }
+        }
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(stringResource(R.string.remote_app_confirm_title)) },
+            text = {
+                Text(stringResource(if (app.reportedCode == null) R.string.remote_app_confirm_unknown else R.string.remote_app_confirm_current))
+            },
+            confirmButton = {
+                TextButton(onClick = { confirm = false; actions.onUpdateWatch() }) { Text(stringResource(R.string.remote_app_btn_offer)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.remote_btn_cancel)) }
             },
         )
     }

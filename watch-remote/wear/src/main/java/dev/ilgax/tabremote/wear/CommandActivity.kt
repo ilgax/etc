@@ -13,15 +13,14 @@ import android.widget.TextView
 import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.Protocol
 
-/** Sends one command immediately and shows a tiny status. Launched by the tile and the launcher alias. */
-open class CommandActivity : Activity() {
-    protected open val defaultCommand: Command? = null
+/** Sends one command immediately and shows a tiny status. Launched by the tile. */
+class CommandActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Exported for the tile host: only a fixed set of commands is accepted, with validated args.
-        val cmd = Command.fromId(intent.getIntExtra(EXTRA_CMD, -1)) ?: defaultCommand
+        val cmd = Command.fromId(intent.getIntExtra(EXTRA_CMD, -1))
         if (cmd == null || cmd !in ALLOWED) return finish()
         val slotCommand = cmd == Command.OPEN_APP || cmd == Command.SWITCH_APP
         val arg = intent.getIntExtra(EXTRA_ARG, -1)
@@ -64,6 +63,6 @@ open class CommandActivity : Activity() {
     companion object {
         const val EXTRA_CMD = "cmd"
         const val EXTRA_ARG = "arg"
-        private val ALLOWED = Command.entries.toSet() - setOf(Command.PING, Command.SYNC_APPS)
+        private val ALLOWED = Command.entries.toSet() - setOf(Command.PING, Command.SYNC_APPS, Command.HELLO, Command.GET_OFFER, Command.UPDATE_STATE)
     }
 }

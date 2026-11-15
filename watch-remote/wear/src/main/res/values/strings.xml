@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tab Remote</string>
-    <string name="lock_tablet_label">Lock Tablet</string>
     <string name="tile_label">Tab Remote</string>
     <string name="tile_title">Tablet</string>
     <string name="tile_lock">Lock</string>
@@ -25,6 +24,19 @@
     <string name="btn_confirm">Confirm</string>
     <string name="btn_cancel">Cancel</string>
     <string name="toggle_close_first">Close current app first</string>
+
+    <string name="update_available">Update available from the tablet</string>
+    <string name="btn_update_to">Update to v%1$d</string>
+    <string name="update_downloading">Downloading %1$d%%</string>
+    <string name="update_installing">Installing v%1$d…</string>
+    <string name="update_confirm">Confirm the install on the next screen</string>
+    <string name="update_allow_installs">Allow installs once, then try again:</string>
+    <string name="update_fail_no_wifi">Wi-Fi not available. Turn it on and join the tablet\'s network</string>
+    <string name="update_fail_download">Couldn\'t reach the tablet over Wi-Fi</string>
+    <string name="update_fail_hash">Download didn\'t match, update cancelled</string>
+    <string name="update_fail_install">Install failed</string>
+    <string name="update_fail_unknown">Update failed</string>
+    <string name="btn_dismiss">Dismiss</string>
 
     <string name="unpaired_info">Not paired yet. Open Tab Remote Receiver on the tablet and tap Pair a watch, then tap Pair here.</string>
     <string name="pair_search_info">Open Tab Remote Receiver on the tablet and tap Pair a watch.</string>

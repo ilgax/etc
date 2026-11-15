@@ -16,12 +16,14 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import dev.ilgax.tabremote.protocol.Command
+import dev.ilgax.tabremote.protocol.UpdateReport
 
 class MainActivity : Activity() {
     private enum class Mode { LIST, PAIR_SEARCH, PAIR_CODE }
 
     private lateinit var client: RemoteClient
     private lateinit var prefs: WatchPrefs
+    private lateinit var updater: WatchUpdater
     private lateinit var scroll: ScrollView
     private lateinit var content: LinearLayout
     private lateinit var statusView: TextView
@@ -34,6 +36,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         client = RemoteClient.get(this)
         prefs = WatchPrefs(this)
+        updater = WatchUpdater.get(this)
         statusText = getString(R.string.status_ready)
 
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -59,10 +62,27 @@ class MainActivity : Activity() {
         setContentView(scroll)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Opening the app is the moment the watch tells the tablet its version and picks up an update offer.
+        client.setForeground(true)
+        client.onUpdateHint = { checkForUpdate() }
+        updater.listener = { render(); launchPendingConfirm() }
+        checkForUpdate()
+    }
+
+    override fun onStop() {
+        updater.listener = null
+        client.onUpdateHint = null
+        client.setForeground(false)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         render()
         scroll.requestFocus()
+        launchPendingConfirm()
     }
 
     override fun onDestroy() {
@@ -105,6 +125,7 @@ class MainActivity : Activity() {
     }
 
     private fun renderList() {
+        renderUpdate()
         pill(R.string.btn_lock, primary = true) { run(Command.LOCK) }
         pill(R.string.btn_play_pause) { run(Command.PLAY_PAUSE) }
         pill(R.string.btn_vol_up) { run(Command.VOLUME_UP) }
@@ -134,6 +155,39 @@ class MainActivity : Activity() {
         }
         pill(R.string.btn_sync) { sync() }
         pill(R.string.btn_repair) { beginPairing() }
+    }
+
+    private fun renderUpdate() {
+        when (val u = updater.state) {
+            UpdateUi.Idle -> Unit
+            is UpdateUi.Available -> {
+                info(R.string.update_available)
+                pill(getString(R.string.btn_update_to, u.offer.versionCode), primary = true) { updater.start(u.offer) }
+                pill(R.string.btn_dismiss) { updater.dismiss() }
+            }
+            is UpdateUi.Downloading -> info(getString(R.string.update_downloading, u.percent))
+            is UpdateUi.Installing -> info(getString(R.string.update_installing, u.version))
+            is UpdateUi.Confirm -> info(getString(R.string.update_confirm))
+            UpdateUi.NeedsInstallPermission -> {
+                info(getString(R.string.update_allow_installs))
+                info(WatchUpdater.ADB_FIX, size = 11f)
+                pill(R.string.btn_dismiss) { updater.dismiss() }
+            }
+            is UpdateUi.Failed -> {
+                info(
+                    getString(
+                        when (u.failure) {
+                            UpdateReport.Failure.NO_WIFI -> R.string.update_fail_no_wifi
+                            UpdateReport.Failure.DOWNLOAD -> R.string.update_fail_download
+                            UpdateReport.Failure.HASH_MISMATCH -> R.string.update_fail_hash
+                            UpdateReport.Failure.INSTALL_FAILED -> R.string.update_fail_install
+                            else -> R.string.update_fail_unknown
+                        },
+                    ),
+                )
+                pill(R.string.btn_dismiss) { updater.dismiss() }
+            }
+        }
     }
 
     private fun renderSearching() {
@@ -212,8 +266,28 @@ class MainActivity : Activity() {
                 else ResultText.describe(this@MainActivity, result, null)
                 if (result == Result.SUCCESS) Haptics.success(this@MainActivity) else Haptics.failure(this@MainActivity)
                 render()
+                if (result == Result.SUCCESS) checkForUpdate()
             }
         })
+    }
+
+    /** HELLO + offer pickup. Silent on any problem: this is background housekeeping, not a user action. */
+    private fun checkForUpdate() {
+        if (!client.isPaired || !hasPermissions() || updater.isBusy) return
+        client.checkForUpdate(WatchUpdater.versionCode(this)) { check ->
+            if (isDestroyed) return@checkForUpdate
+            if (check is UpdateCheck.Offer) updater.onOffer(check.offer, auto = true)
+        }
+    }
+
+    /** The system install dialog must be started from a visible activity. */
+    private fun launchPendingConfirm() {
+        val intent = updater.takePendingConfirm() ?: return
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            setStatus(getString(R.string.update_fail_install))
+        }
     }
 
     private fun cancelPairing() {
@@ -244,10 +318,12 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun info(res: Int) {
+    private fun info(res: Int) = info(getString(res))
+
+    private fun info(text: String, size: Float = 13f) {
         content.addView(TextView(this).apply {
-            setText(res)
-            textSize = 13f
+            this.text = text
+            textSize = size
             gravity = Gravity.CENTER
             setTextColor(0xFFB0BEC5.toInt())
             setPadding(0, 0, 0, dp(8))

@@ -59,6 +59,7 @@ internal object RemoteControl {
     fun unpair(context: Context) {
         KeyVault().delete()
         RemotePrefs(context).paired = false
+        UpdateHost.get(context).apply { stop(); clearWatchVersion() }
         RemoteState.poke()
     }
 

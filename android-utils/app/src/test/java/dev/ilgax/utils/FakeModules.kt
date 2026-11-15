@@ -24,6 +24,8 @@ import dev.ilgax.utils.remote.RemoteState
 import dev.ilgax.utils.remote.RemoteUiState
 import dev.ilgax.utils.remote.SetupChecks
 import dev.ilgax.utils.remote.SlotUi
+import dev.ilgax.utils.remote.WatchAppUi
+import dev.ilgax.utils.remote.WatchUpdateState
 import dev.ilgax.utils.speaker.SpeakerActions
 import dev.ilgax.utils.speaker.SpeakerScreen
 import dev.ilgax.utils.speaker.SpeakerUiState
@@ -70,6 +72,9 @@ object Fixtures {
         slots = listOf(SlotUi("Firefox", "org.mozilla.firefox"), SlotUi("Spotify", "com.spotify.music"), null, SlotUi("Files", "com.android.documentsui")),
         forceStop = true,
     )
+    val remoteUpdateAvailable = remoteListening.copy(watchApp = WatchAppUi("0.2.0", 2, 1))
+    val remoteUpToDate = remoteListening.copy(watchApp = WatchAppUi("0.2.0", 2, 2))
+    val remoteUpdateDownloading = remoteListening.copy(watchApp = WatchAppUi("0.2.0", 2, 1, WatchUpdateState.Downloading(46)))
     val remoteSetup = remoteListening.copy(checks = SetupChecks(true, true, true, false, false))
 
     val mathReady = MathUiState(

@@ -5,6 +5,8 @@
         android:name="android.hardware.bluetooth_le"
         android:required="false" />
 
+    <!-- Only for the one-shot local HTTP server that hands the bundled watch APK to the watch. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

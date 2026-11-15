@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +31,7 @@ import dev.ilgax.utils.core.shizuku.ShizukuState
 import dev.ilgax.utils.core.shizuku.ShizukuStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Stateful wrapper: reads the real checks, wires actions to the service, shows the sheets. */
@@ -38,6 +40,7 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
     val context = LocalContext.current
     val prefs = remember { RemotePrefs(context) }
     val executor = remember { CommandExecutor(context) }
+    val updates = remember { UpdateHost.get(context) }
     var tick by remember { mutableIntStateOf(0) }
 
     DisposableEffect(Unit) {
@@ -72,9 +75,16 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
                 prefs.slot(i)?.let { pkg -> AppCatalog.label(context, pkg)?.let { SlotUi(it, pkg) } }
             },
             forceStop = shizuku == ShizukuStatus.Ready,
+            watchApp = updates.bundled()?.let {
+                WatchAppUi(
+                    it.versionName, it.versionCode, updates.watchVersion,
+                    UpdateHost.stateOf(updates.snapshot(), System.currentTimeMillis()),
+                )
+            },
         )
     }
 
+    val scope = rememberCoroutineScope()
     val btPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
     val actions = remember(context) {
         RemoteActions(
@@ -106,6 +116,16 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
             onUnpair = { RemoteControl.unpair(context); tick++ },
             onClearSlot = { prefs.setSlot(it, null); tick++ },
             onPickSlot = { slot, pkg -> prefs.setSlot(slot, pkg); tick++ },
+            onUpdateWatch = {
+                // The offer is only fetched over BLE, so the listener must be running.
+                if (!RemoteService.isRunning()) RemoteControl.setListening(context, true)
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { updates.start() }
+                    result.messageRes()?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                    tick++
+                }
+            },
+            onCancelUpdate = { updates.stop(); tick++ },
             runCommand = { command, args -> executor.execute(command, args) },
             loadApps = { withContext(Dispatchers.IO) { AppCatalog.launchableApps(context) } },
         )
@@ -140,6 +160,13 @@ internal fun RemoteDetail(contentPadding: PaddingValues, modifier: Modifier) {
             onClose = { showSuccess = false },
         )
     }
+}
+
+private fun UpdateHost.StartResult.messageRes(): Int? = when (this) {
+    UpdateHost.StartResult.STARTED -> null
+    UpdateHost.StartResult.NO_APK -> R.string.remote_app_no_apk
+    UpdateHost.StartResult.NO_ADDRESS -> R.string.remote_app_no_address
+    UpdateHost.StartResult.FAILED -> R.string.remote_app_start_failed
 }
 
 private fun secondsLeft(deadline: Long) = maxOf(0L, (deadline - System.currentTimeMillis()) / 1000).toInt()

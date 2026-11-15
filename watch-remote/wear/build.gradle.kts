@@ -11,8 +11,19 @@ android {
         applicationId = "dev.ilgax.tabremote.wear"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    // Fixed debug key (the one the first sideloaded build was signed with): Utils bundles this APK as an
+    // update, and Android only accepts an update signed with the same certificate as the installed app.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

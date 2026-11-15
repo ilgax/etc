@@ -30,6 +30,7 @@ class CommandExecutor(context: Context) {
             Command.KILL_APP -> killApp()
             Command.OPEN_APP -> openApp(args.firstOrNull()?.toInt(), switchFrom = false)
             Command.SWITCH_APP -> openApp(args.firstOrNull()?.toInt(), switchFrom = true)
+            Command.HELLO, Command.GET_OFFER, Command.UPDATE_STATE -> Status.UNKNOWN_COMMAND // update protocol: Utils only
         }
     } catch (e: Exception) {
         Status.FAILED

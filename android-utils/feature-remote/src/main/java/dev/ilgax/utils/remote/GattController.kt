@@ -3,6 +3,7 @@ package dev.ilgax.utils.remote
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattServerCallback
 import android.bluetooth.BluetoothGattService
@@ -14,6 +15,7 @@ import android.os.HandlerThread
 import dev.ilgax.tabremote.protocol.AppSlots
 import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.CommandFrame
+import dev.ilgax.tabremote.protocol.OfferFrame
 import dev.ilgax.tabremote.protocol.Protocol
 import dev.ilgax.tabremote.protocol.Status
 import java.io.ByteArrayOutputStream
@@ -42,6 +44,11 @@ class GattController(
     private val pairBuffers = HashMap<String, ByteArrayOutputStream>()
     private val appsGrants = HashSet<String>()
     private val appsSnapshots = HashMap<String, ByteArray>()
+    /** GET_OFFER grants: one authenticated read of OFFER, bound to the nonce of the granting frame. */
+    private val offerGrants = HashMap<String, ByteArray>()
+    private val offerSnapshots = HashMap<String, ByteArray>()
+    private val offerSubscribers = HashSet<String>()
+    private var offerChar: BluetoothGattCharacteristic? = null
     private val failures = HashMap<String, Int>()
     private val lockedUntil = HashMap<String, Long>()
 
@@ -66,6 +73,22 @@ class GattController(
         handler.post {
             devices.clear(); nonces.clear(); mtus.clear(); pairBuffers.clear()
             appsGrants.clear(); appsSnapshots.clear()
+            offerGrants.clear(); offerSnapshots.clear(); offerSubscribers.clear()
+        }
+    }
+
+    /** Content-free ping to subscribed watches: "ask for the offer". The offer itself is never notified. */
+    fun notifyOffer() {
+        handler.post {
+            val s = server ?: return@post
+            val ch = offerChar ?: return@post
+            for (addr in offerSubscribers.toList()) {
+                val device = devices[addr] ?: continue
+                try {
+                    s.notifyCharacteristicChanged(device, ch, false, byteArrayOf(1))
+                } catch (_: SecurityException) {
+                }
+            }
         }
     }
 
@@ -94,6 +117,16 @@ class GattController(
         svc.addCharacteristic(
             BluetoothGattCharacteristic(Protocol.APPS_UUID, BluetoothGattCharacteristic.PROPERTY_READ, read),
         )
+        val offer = BluetoothGattCharacteristic(
+            Protocol.OFFER_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+            read,
+        )
+        offer.addDescriptor(
+            BluetoothGattDescriptor(Protocol.CCCD_UUID, BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE),
+        )
+        svc.addCharacteristic(offer)
+        offerChar = offer
         return svc
     }
 
@@ -111,6 +144,7 @@ class GattController(
                 } else {
                     devices.remove(addr); nonces.remove(addr); mtus.remove(addr)
                     pairBuffers.remove(addr); appsGrants.remove(addr); appsSnapshots.remove(addr)
+                    offerGrants.remove(addr); offerSnapshots.remove(addr); offerSubscribers.remove(addr)
                     if (newState == BluetoothProfile.STATE_DISCONNECTED) onReady() // re-assert advertising
                 }
             }
@@ -132,6 +166,37 @@ class GattController(
         ) {
             val data = value?.copyOf() ?: ByteArray(0)
             handler.post { handleWrite(device, requestId, characteristic.uuid, preparedWrite, responseNeeded, offset, data) }
+        }
+
+        override fun onDescriptorReadRequest(
+            device: BluetoothDevice, requestId: Int, offset: Int, descriptor: BluetoothGattDescriptor,
+        ) {
+            handler.post {
+                val on = descriptor.uuid == Protocol.CCCD_UUID && device.address in offerSubscribers
+                if (descriptor.uuid != Protocol.CCCD_UUID) {
+                    respond(device, requestId, BluetoothGatt.GATT_READ_NOT_PERMITTED, offset, null)
+                } else {
+                    val v = if (on) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+                    respondSlice(device, requestId, offset, v)
+                }
+            }
+        }
+
+        override fun onDescriptorWriteRequest(
+            device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
+            preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?,
+        ) {
+            val data = value?.copyOf() ?: ByteArray(0)
+            handler.post {
+                val ok = descriptor.uuid == Protocol.CCCD_UUID && !preparedWrite && offset == 0 && data.size == 2
+                if (ok) {
+                    if (data.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) offerSubscribers.add(device.address)
+                    else offerSubscribers.remove(device.address)
+                }
+                if (responseNeeded) {
+                    respond(device, requestId, if (ok) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_WRITE_NOT_PERMITTED, offset, null)
+                }
+            }
         }
 
         override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
@@ -175,6 +240,26 @@ class GattController(
                 // The stack truncates each response to MTU-1 bytes; drop the snapshot once the end is reached.
                 val chunk = (mtus[addr] ?: DEFAULT_MTU) - 1
                 if (offset + chunk >= payload.size) appsSnapshots.remove(addr)
+            }
+            Protocol.OFFER_UUID -> {
+                // Only after an authenticated GET_OFFER; the tag binds the payload to that frame's nonce.
+                val payload: ByteArray? = if (offset == 0) {
+                    offerGrants.remove(addr)?.let { nonce ->
+                        val mac: (ByteArray) -> ByteArray = { vault.mac(it) ?: throw IllegalStateException("no key") }
+                        try {
+                            OfferFrame.encode(mac, nonce, UpdateHost.get(context).currentOffer())
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }?.also { offerSnapshots[addr] = it }
+                } else offerSnapshots[addr]
+                if (payload == null) {
+                    respond(device, requestId, Status.AUTH_FAILED.code, offset, null)
+                    return
+                }
+                respondSlice(device, requestId, offset, payload)
+                val chunk = (mtus[addr] ?: DEFAULT_MTU) - 1
+                if (offset + chunk >= payload.size) offerSnapshots.remove(addr)
             }
             else -> respond(device, requestId, BluetoothGatt.GATT_READ_NOT_PERMITTED, offset, null)
         }
@@ -249,6 +334,7 @@ class GattController(
         pairing.tryCommit(nonce, frame) { key ->
             vault.save(key)
             prefs.paired = true
+            prefs.watchVersion = -1 // a new pairing may be a different watch
         }?.let { return it }
 
         if (!vault.has()) return Status.AUTH_FAILED
@@ -258,6 +344,7 @@ class GattController(
             is CommandFrame.Result.Valid -> {
                 val status = executor.execute(r.command, r.args)
                 if (r.command == Command.SYNC_APPS && status == Status.SUCCESS) appsGrants.add(addr)
+                if (r.command == Command.GET_OFFER && status == Status.SUCCESS) offerGrants[addr] = nonce
                 status
             }
         }

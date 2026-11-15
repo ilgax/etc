@@ -66,6 +66,37 @@
     <string name="remote_pair_success_body">It can send commands now. Tap Sync apps on the watch to load your app slots.</string>
     <string name="remote_pair_code_cd">Pairing code %1$s</string>
 
+    <string name="remote_group_watch_app">Watch app</string>
+    <string name="remote_app_bundled">Bundled in Utils</string>
+    <string name="remote_app_on_watch">On the watch</string>
+    <string name="remote_app_status">Status</string>
+    <string name="remote_app_version">%1$s (build %2$d)</string>
+    <string name="remote_app_build">Build %1$d</string>
+    <string name="remote_app_unknown">Unknown (update via adb once)</string>
+    <string name="remote_app_st_available">Update available</string>
+    <string name="remote_app_st_current">Up to date</string>
+    <string name="remote_app_st_unknown">Version not reported yet</string>
+    <string name="remote_app_st_waiting">Open Tab Remote on the watch to receive the update</string>
+    <string name="remote_app_st_downloading">Watch is downloading · %1$d%%</string>
+    <string name="remote_app_st_installing">Installing on the watch · confirm there if it asks</string>
+    <string name="remote_app_st_timed_out">Nobody downloaded it in 10 minutes. Try again</string>
+    <string name="remote_app_st_no_wifi">The watch has no Wi-Fi. Turn it on and join this tablet\'s hotspot or network</string>
+    <string name="remote_app_st_download">The watch could not reach this tablet over Wi-Fi</string>
+    <string name="remote_app_st_hash">The watch rejected the download (checksum mismatch)</string>
+    <string name="remote_app_st_blocked">The watch is not allowed to install apps. Run the adb appops command once</string>
+    <string name="remote_app_st_install_failed">The watch could not install it</string>
+    <string name="remote_app_st_failed">The update failed</string>
+    <string name="remote_app_btn_update">Update watch app</string>
+    <string name="remote_app_btn_cancel">Cancel update</string>
+    <string name="remote_app_confirm_title">Update the watch anyway?</string>
+    <string name="remote_app_confirm_current">The watch already runs this version. Install it again?</string>
+    <string name="remote_app_confirm_unknown">The watch has not reported its version. An old watch build cannot receive updates: install the new one with adb once. Offer it anyway?</string>
+    <string name="remote_app_btn_offer">Offer update</string>
+    <string name="remote_app_need_pair">Pair the watch first.</string>
+    <string name="remote_app_no_address">No network address to serve from. Connect this tablet to Wi-Fi or turn on its hotspot.</string>
+    <string name="remote_app_start_failed">Could not start the update server.</string>
+    <string name="remote_app_no_apk">This build has no watch app bundled.</string>
+
     <string name="remote_group_slots">Apps to open from the watch</string>
     <string name="remote_slot_title">Slot %1$d</string>
     <string name="remote_slot_unset">Not set</string>

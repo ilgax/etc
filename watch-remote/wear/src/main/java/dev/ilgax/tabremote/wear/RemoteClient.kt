@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
@@ -26,9 +27,24 @@ import dev.ilgax.tabremote.protocol.Command
 import dev.ilgax.tabremote.protocol.CommandFrame
 import dev.ilgax.tabremote.protocol.Hmac
 import dev.ilgax.tabremote.protocol.Pairing
+import dev.ilgax.tabremote.protocol.OfferFrame
 import dev.ilgax.tabremote.protocol.Protocol
 import dev.ilgax.tabremote.protocol.Status
+import dev.ilgax.tabremote.protocol.UpdateCodec
+import dev.ilgax.tabremote.protocol.UpdateOffer
+import dev.ilgax.tabremote.protocol.UpdateReport
 import java.security.KeyPair
+
+/** Outcome of [RemoteClient.checkForUpdate]. */
+sealed interface UpdateCheck {
+    /** Authenticated offer from the tablet; the user tapped Update there. */
+    class Offer(val offer: UpdateOffer) : UpdateCheck
+    /** Authenticated "nothing offered". */
+    data object None : UpdateCheck
+    /** The tablet app predates the update protocol (no OFFER characteristic, or UNKNOWN_COMMAND). */
+    data object Unsupported : UpdateCheck
+    class Failed(val result: Result) : UpdateCheck
+}
 
 interface PairingListener {
     /** Both sides now show this code; the user must compare and then call [RemoteClient.confirmPairing]. */
@@ -63,6 +79,10 @@ class RemoteClient private constructor(context: Context) {
     private var commandCh: BluetoothGattCharacteristic? = null
     private var pairCh: BluetoothGattCharacteristic? = null
     private var appsCh: BluetoothGattCharacteristic? = null
+    /** Optional: absent on tablet apps that predate the updater. */
+    private var offerCh: BluetoothGattCharacteristic? = null
+    private var notifying = false
+    private var foreground = false
 
     private var pendingOp: ((Int, ByteArray?) -> Unit)? = null
     private var connectDone: ((Result?) -> Unit)? = null
@@ -77,7 +97,10 @@ class RemoteClient private constructor(context: Context) {
 
     private val opTimeout = Runnable { completeOp(STATUS_TIMEOUT, null) }
     private val connectTimeout = Runnable { connectFinish(Result.CONNECT_FAILED, teardown = true) }
-    private val idle = Runnable { if (current == null && queue.isEmpty() && awaiting == null) teardown() }
+    private val idle = Runnable { if (current == null && queue.isEmpty() && awaiting == null && !foreground) teardown() }
+
+    /** Called on the main thread when the tablet pings that an update offer is available. */
+    @Volatile var onUpdateHint: (() -> Unit)? = null
 
     // region public API
 
@@ -104,6 +127,66 @@ class RemoteClient private constructor(context: Context) {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Reports [versionCode] with HELLO, subscribes to offer pings, then asks for the current offer (GET_OFFER) and
+     * reads it. The offer is only trusted if its HMAC verifies against the nonce of the GET_OFFER frame.
+     */
+    fun checkForUpdate(versionCode: Int, callback: (UpdateCheck) -> Unit) {
+        var outcome: UpdateCheck? = null
+        enqueue({ r -> callback(outcome ?: UpdateCheck.Failed(r)) }) {
+            withConnection(pairing = false) { err ->
+                if (err != null) return@withConnection finish(err)
+                val oCh = offerCh
+                if (oCh == null) {
+                    outcome = UpdateCheck.Unsupported
+                    return@withConnection finish(Result.SUCCESS)
+                }
+                ensureMtu {
+                    sendSignedWithNonce(this@RemoteClient::vaultMac, Command.HELLO, UpdateCodec.encodeVersion(versionCode)) { r, _ ->
+                        if (r == Result.UNKNOWN_COMMAND) {
+                            outcome = UpdateCheck.Unsupported
+                            return@sendSignedWithNonce finish(Result.SUCCESS)
+                        }
+                        if (r != Result.SUCCESS) return@sendSignedWithNonce finish(r)
+                        subscribe(oCh) {
+                            sendSignedWithNonce(this@RemoteClient::vaultMac, Command.GET_OFFER, ByteArray(0)) { r2, nonce ->
+                                if (r2 == Result.UNKNOWN_COMMAND) {
+                                    outcome = UpdateCheck.Unsupported
+                                    return@sendSignedWithNonce finish(Result.SUCCESS)
+                                }
+                                if (r2 != Result.SUCCESS || nonce == null) return@sendSignedWithNonce finish(r2)
+                                op(OP_TIMEOUT_MS, { read(it, oCh) }) { st, value ->
+                                    if (st != 0 || value == null) return@op finish(mapStatus(st))
+                                    outcome = try {
+                                        when (val v = OfferFrame.verify(this@RemoteClient::vaultMac, nonce, value)) {
+                                            is OfferFrame.Result.Valid -> v.offer?.let { UpdateCheck.Offer(it) } ?: UpdateCheck.None
+                                            is OfferFrame.Result.Invalid -> UpdateCheck.Failed(Result.AUTH_FAILED)
+                                        }
+                                    } catch (e: Exception) {
+                                        UpdateCheck.Failed(Result.FAILED)
+                                    }
+                                    finish(Result.SUCCESS)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Best-effort progress for the tablet's "Watch app" section; failures are ignored. */
+    fun reportUpdate(report: UpdateReport) = send(Command.UPDATE_STATE, report.encode()) { }
+
+    /** While the app is visible the connection is kept open so the tablet can ping about a new offer. */
+    fun setForeground(on: Boolean) {
+        handler.post {
+            foreground = on
+            handler.removeCallbacks(idle)
+            if (!on) handler.postDelayed(idle, IDLE_MS)
         }
     }
 
@@ -255,18 +338,24 @@ class RemoteClient private constructor(context: Context) {
     private fun vaultMac(data: ByteArray): ByteArray = vault.mac(data) ?: throw IllegalStateException("no key")
 
     /** Nonce read, then a signed COMMAND write. [mac] may throw; that maps to FAILED. */
-    private fun Job.sendSigned(mac: (ByteArray) -> ByteArray, cmd: Command, args: ByteArray, done: (Result) -> Unit) {
+    private fun Job.sendSigned(mac: (ByteArray) -> ByteArray, cmd: Command, args: ByteArray, done: (Result) -> Unit) =
+        sendSignedWithNonce(mac, cmd, args) { r, _ -> done(r) }
+
+    /** As above; [done] also gets the nonce the frame was bound to (needed to verify a granted OFFER read). */
+    private fun Job.sendSignedWithNonce(
+        mac: (ByteArray) -> ByteArray, cmd: Command, args: ByteArray, done: (Result, ByteArray?) -> Unit,
+    ) {
         val nCh = nonceCh
         val cCh = commandCh
-        if (nCh == null || cCh == null) return done(Result.CONNECT_FAILED)
+        if (nCh == null || cCh == null) return done(Result.CONNECT_FAILED, null)
         op(OP_TIMEOUT_MS, { read(it, nCh) }) { st, nonce ->
-            if (st != 0 || nonce == null) return@op done(mapStatus(st))
+            if (st != 0 || nonce == null) return@op done(mapStatus(st), null)
             val frame = try {
                 CommandFrame.encode(mac, nonce, cmd, args)
             } catch (e: Exception) {
-                return@op done(Result.FAILED)
+                return@op done(Result.FAILED, null)
             }
-            op(OP_TIMEOUT_MS, { write(it, cCh, frame) }) { st2, _ -> done(mapStatus(st2)) }
+            op(OP_TIMEOUT_MS, { write(it, cCh, frame) }) { st2, _ -> done(mapStatus(st2), nonce) }
         }
     }
 
@@ -346,6 +435,33 @@ class RemoteClient private constructor(context: Context) {
                 ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 ch.value = value
                 g.writeCharacteristic(ch)
+            }
+        }
+    } catch (e: SecurityException) {
+        false
+    }
+
+    /** Enables notifications for [ch] once per connection; continues whatever the outcome. */
+    private fun subscribe(ch: BluetoothGattCharacteristic, then: () -> Unit) {
+        val cccd = ch.getDescriptor(Protocol.CCCD_UUID)
+        val g = gatt
+        if (notifying || cccd == null || g == null) return then()
+        val enabled = try { g.setCharacteristicNotification(ch, true) } catch (e: SecurityException) { false }
+        if (!enabled) return then()
+        op(OP_TIMEOUT_MS, { writeDescriptor(it, cccd) }) { st, _ ->
+            if (st == 0) notifying = true
+            then()
+        }
+    }
+
+    private fun writeDescriptor(g: BluetoothGatt, d: BluetoothGattDescriptor): Boolean = try {
+        if (Build.VERSION.SDK_INT >= 33) {
+            g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothStatusCodes.SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                d.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                g.writeDescriptor(d)
             }
         }
     } catch (e: SecurityException) {
@@ -515,7 +631,8 @@ class RemoteClient private constructor(context: Context) {
         awaiting = null
         mtuRequested = false
         connectedTabletId = null
-        nonceCh = null; commandCh = null; pairCh = null; appsCh = null
+        nonceCh = null; commandCh = null; pairCh = null; appsCh = null; offerCh = null
+        notifying = false
         closeGatt()
     }
 
@@ -554,6 +671,7 @@ class RemoteClient private constructor(context: Context) {
                 commandCh = svc?.getCharacteristic(Protocol.COMMAND_UUID)
                 pairCh = svc?.getCharacteristic(Protocol.PAIR_UUID)
                 appsCh = svc?.getCharacteristic(Protocol.APPS_UUID)
+                offerCh = svc?.getCharacteristic(Protocol.OFFER_UUID)
                 if (nonceCh == null || commandCh == null || pairCh == null || appsCh == null) {
                     return@post connectFinish(Result.CONNECT_FAILED, teardown = true)
                 }
@@ -580,6 +698,23 @@ class RemoteClient private constructor(context: Context) {
 
         override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
             handler.post { if (g === gatt) completeOp(status, null) }
+        }
+
+        override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
+            handler.post { if (g === gatt) completeOp(status, null) }
+        }
+
+        // The ping carries no data on purpose: the offer itself is only ever read after an authenticated GET_OFFER.
+        override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) = hint(g, ch)
+
+        @Deprecated("Used below API 33")
+        override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+            if (Build.VERSION.SDK_INT < 33) hint(g, ch)
+        }
+
+        private fun hint(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+            if (ch.uuid != Protocol.OFFER_UUID) return
+            handler.post { if (g === gatt) main.post { onUpdateHint?.invoke() } }
         }
     }
 
