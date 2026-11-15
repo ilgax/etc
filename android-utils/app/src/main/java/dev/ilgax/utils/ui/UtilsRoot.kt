@@ -37,10 +37,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ilgax.utils.R
@@ -179,6 +182,10 @@ private fun HomeList(
     modifier: Modifier,
 ) {
     val dir = LocalLayoutDirection.current
+    val context = LocalContext.current
+    val version = remember(context) {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+    }
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = SingleColumnMaxWidth).fillMaxSize(),
@@ -215,6 +222,17 @@ private fun HomeList(
                     onToggle = { onToggle(module) },
                     showSwitch = module.quickSwitch,
                 )
+            }
+            if (version != null) {
+                item(key = "version") {
+                    Text(
+                        stringResource(R.string.home_version, version),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }

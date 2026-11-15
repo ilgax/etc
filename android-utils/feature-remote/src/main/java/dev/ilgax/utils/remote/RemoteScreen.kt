@@ -179,12 +179,16 @@ private fun WatchAppGroup(app: WatchAppUi, paired: Boolean, actions: RemoteActio
     SettingsGroup(title = stringResource(R.string.remote_group_watch_app)) {
         SettingsRow(
             label = stringResource(R.string.remote_app_bundled),
-            value = stringResource(R.string.remote_app_version, app.bundledName, app.bundledCode),
+            value = app.bundledName,
             iconRes = R.drawable.ic_watch,
         )
         SettingsRow(
             label = stringResource(R.string.remote_app_on_watch),
-            value = app.reportedCode?.let { stringResource(R.string.remote_app_build, it) } ?: stringResource(R.string.remote_app_unknown),
+            value = when (val reported = app.reportedCode) {
+                null -> stringResource(R.string.remote_app_unknown)
+                app.bundledCode -> app.bundledName
+                else -> stringResource(R.string.remote_app_build, reported)
+            },
             iconRes = CoreR.drawable.ic_info,
         )
         SettingsRow(

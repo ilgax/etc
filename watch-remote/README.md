@@ -16,7 +16,7 @@ Modules
 ./gradlew --no-daemon :protocol:test :tablet:assembleDebug :wear:assembleDebug :tablet:lintDebug :wear:lintDebug
 ```
 
-APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist/tab-remote-watch-0.2.0-debug.apk` (watch). `local.properties` must contain `sdk.dir=/opt/android-sdk` (or your SDK path).
+APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist/tab-remote-watch-0.2.1-debug.apk` (watch). `local.properties` must contain `sdk.dir=/opt/android-sdk` (or your SDK path).
 
 ## Install
 
@@ -25,7 +25,7 @@ APKs are copied to `dist/tab-remote-receiver-0.1.0-debug.apk` (tablet) and `dist
   ```
   adb pair <ip>:<pairing-port>        # enter the pairing code shown on the watch
   adb connect <ip>:<port>
-  adb install -r dist/tab-remote-watch-0.2.0-debug.apk
+  adb install -r dist/tab-remote-watch-0.2.1-debug.apk
   ```
 
 ## First-time setup on the tablet
@@ -81,7 +81,7 @@ Utils (`android-utils`, `:feature-remote`) bundles this watch APK and can push i
 
 One-time setup (adb, wireless debugging on the watch):
 ```
-adb install -r dist/tab-remote-watch-0.2.0-debug.apk
+adb install -r dist/tab-remote-watch-0.2.1-debug.apk
 adb shell appops set dev.ilgax.tabremote.wear REQUEST_INSTALL_PACKAGES allow
 ```
 The second command allows Tab Remote to install packages; without it the watch shows this exact command instead of installing.

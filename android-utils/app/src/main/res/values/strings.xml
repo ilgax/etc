@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Utils</string>
+    <string name="home_version">Utils %1$s</string>
     <string name="home_subtitle">Small tools for this tablet</string>
 </resources>

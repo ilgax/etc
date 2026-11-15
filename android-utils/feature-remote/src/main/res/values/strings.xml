@@ -67,12 +67,11 @@
     <string name="remote_pair_code_cd">Pairing code %1$s</string>
 
     <string name="remote_group_watch_app">Watch app</string>
-    <string name="remote_app_bundled">Bundled in Utils</string>
-    <string name="remote_app_on_watch">On the watch</string>
+    <string name="remote_app_bundled">Latest watch app</string>
+    <string name="remote_app_on_watch">On your watch</string>
     <string name="remote_app_status">Status</string>
-    <string name="remote_app_version">%1$s (build %2$d)</string>
-    <string name="remote_app_build">Build %1$d</string>
-    <string name="remote_app_unknown">Unknown (update via adb once)</string>
+    <string name="remote_app_build">build %1$d</string>
+    <string name="remote_app_unknown">Not reported yet</string>
     <string name="remote_app_st_available">Update available</string>
     <string name="remote_app_st_current">Up to date</string>
     <string name="remote_app_st_unknown">Version not reported yet</string>

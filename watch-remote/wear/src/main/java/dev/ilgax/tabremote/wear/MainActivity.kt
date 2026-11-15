@@ -155,6 +155,7 @@ class MainActivity : Activity() {
         }
         pill(R.string.btn_sync) { sync() }
         pill(R.string.btn_repair) { beginPairing() }
+        versionLabel()
     }
 
     private fun renderUpdate() {
@@ -327,6 +328,18 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(0xFFB0BEC5.toInt())
             setPadding(0, 0, 0, dp(8))
+        })
+    }
+
+    /** Small, dim app version at the very end of the list. */
+    private fun versionLabel() {
+        val name = packageManager.getPackageInfo(packageName, 0).versionName ?: return
+        content.addView(TextView(this).apply {
+            text = getString(R.string.app_version, name)
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF78909C.toInt())
+            setPadding(0, dp(8), 0, 0)
         })
     }
 

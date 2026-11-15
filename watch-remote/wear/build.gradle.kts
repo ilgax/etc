@@ -11,8 +11,8 @@ android {
         applicationId = "dev.ilgax.tabremote.wear"
         minSdk = 31
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
     }
 
     // Fixed debug key (the one the first sideloaded build was signed with): Utils bundles this APK as an

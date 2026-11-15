@@ -55,21 +55,21 @@ class UpdateLogicTest {
     }
 
     @Test fun versionStates() {
-        fun ui(reported: Int?, update: WatchUpdateState = WatchUpdateState.Idle) = WatchAppUi("0.2.0", 2, reported, update)
-        assertTrue(ui(1).updateAvailable)
-        assertFalse(ui(2).updateAvailable)
-        assertTrue(ui(2).upToDate)
+        fun ui(reported: Int?, update: WatchUpdateState = WatchUpdateState.Idle) = WatchAppUi("0.2.1", 3, reported, update)
+        assertTrue(ui(2).updateAvailable)
+        assertFalse(ui(3).updateAvailable)
+        assertTrue(ui(3).upToDate)
         assertFalse(ui(null).updateAvailable)
         assertFalse(ui(null).upToDate)
-        assertEquals(R.string.remote_app_st_available, ui(1).statusRes())
-        assertEquals(R.string.remote_app_st_current, ui(2).statusRes())
+        assertEquals(R.string.remote_app_st_available, ui(2).statusRes())
+        assertEquals(R.string.remote_app_st_current, ui(3).statusRes())
         assertEquals(R.string.remote_app_st_unknown, ui(null).statusRes())
-        assertEquals(R.string.remote_app_st_waiting, ui(1, WatchUpdateState.Waiting(100)).statusRes())
-        assertTrue(ui(1, WatchUpdateState.Waiting(100)).active)
-        assertFalse(ui(1, WatchUpdateState.TimedOut).active)
+        assertEquals(R.string.remote_app_st_waiting, ui(2, WatchUpdateState.Waiting(100)).statusRes())
+        assertTrue(ui(2, WatchUpdateState.Waiting(100)).active)
+        assertFalse(ui(2, WatchUpdateState.TimedOut).active)
         assertEquals(
             R.string.remote_app_st_hash,
-            ui(1, WatchUpdateState.Failed(UpdateReport.Failure.HASH_MISMATCH)).statusRes(),
+            ui(2, WatchUpdateState.Failed(UpdateReport.Failure.HASH_MISMATCH)).statusRes(),
         )
     }
 }

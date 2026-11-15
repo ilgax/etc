@@ -21,6 +21,7 @@
     <string name="btn_sync">Sync apps</string>
     <string name="btn_pair">Pair</string>
     <string name="btn_repair">Re-pair</string>
+    <string name="app_version">v%1$s</string>
     <string name="btn_confirm">Confirm</string>
     <string name="btn_cancel">Cancel</string>
     <string name="toggle_close_first">Close current app first</string>

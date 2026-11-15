@@ -72,9 +72,9 @@ object Fixtures {
         slots = listOf(SlotUi("Firefox", "org.mozilla.firefox"), SlotUi("Spotify", "com.spotify.music"), null, SlotUi("Files", "com.android.documentsui")),
         forceStop = true,
     )
-    val remoteUpdateAvailable = remoteListening.copy(watchApp = WatchAppUi("0.2.0", 2, 1))
-    val remoteUpToDate = remoteListening.copy(watchApp = WatchAppUi("0.2.0", 2, 2))
-    val remoteUpdateDownloading = remoteListening.copy(watchApp = WatchAppUi("0.2.0", 2, 1, WatchUpdateState.Downloading(46)))
+    val remoteUpdateAvailable = remoteListening.copy(watchApp = WatchAppUi("0.2.1", 3, 2))
+    val remoteUpToDate = remoteListening.copy(watchApp = WatchAppUi("0.2.1", 3, 3))
+    val remoteUpdateDownloading = remoteListening.copy(watchApp = WatchAppUi("0.2.1", 3, 2, WatchUpdateState.Downloading(46)))
     val remoteSetup = remoteListening.copy(checks = SetupChecks(true, true, true, false, false))
 
     val mathReady = MathUiState(
