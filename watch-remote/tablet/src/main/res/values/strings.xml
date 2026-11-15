@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tab Remote Receiver</string>
+    <string name="channel_name">Remote listener</string>
+    <string name="notification_title">Listening for watch</string>
+    <string name="stop_ringing">Stop ringing</string>
+
+    <string name="a11y_label">Tab Remote</string>
+    <string name="a11y_description">Tab Remote reads which app is on screen so it can close it, and locks the screen or opens apps only when your paired watch asks. It does not read or store anything else.</string>
+
+    <string name="intro">Lets your paired watch lock this tablet, control media and volume, ring it and open or close apps over Bluetooth.</string>
+    <string name="section_status">Status</string>
+    <string name="check_ok">✓ %1$s</string>
+    <string name="check_bad">✗ %1$s</string>
+    <string name="chk_bt_permission">Bluetooth permissions</string>
+    <string name="chk_notifications">Notification permission</string>
+    <string name="chk_bluetooth_on">Bluetooth is on</string>
+    <string name="chk_accessibility">Accessibility service enabled</string>
+    <string name="chk_battery">Battery optimisation exempt</string>
+    <string name="chk_service">Service running</string>
+    <string name="chk_paired">Watch paired</string>
+    <string name="a11y_note">Needed to lock the screen and to open or close apps. If the toggle is greyed out for a sideloaded app on Android 13 or later, open this app\'s App info page, tap the ⋮ menu and choose \"Allow restricted settings\" first.</string>
+    <string name="btn_grant">Grant</string>
+    <string name="btn_enable">Turn on</string>
+    <string name="btn_open_settings">Open settings</string>
+    <string name="btn_exempt">Exempt</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_stop">Stop</string>
+    <string name="btn_unpair">Unpair</string>
+    <string name="btn_pair">Pair a watch</string>
+    <string name="btn_confirm">Confirm</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_choose">Choose</string>
+    <string name="btn_clear">Clear</string>
+
+    <string name="svc_no_permission">The service stopped: Bluetooth permissions are missing.</string>
+    <string name="svc_bluetooth_off">Waiting for Bluetooth to be turned on.</string>
+    <string name="svc_error">The service stopped: %1$s</string>
+    <string name="svc_start_refused">Android did not allow the service to start. Open the app and try again.</string>
+    <string name="err_no_adapter">This device has no Bluetooth adapter.</string>
+    <string name="err_gatt">Could not open the Bluetooth GATT server.</string>
+    <string name="err_advertise">Advertising failed (code %1$d).</string>
+    <string name="no_handler">This settings screen is not available on this device.</string>
+
+    <string name="section_pairing">Pairing</string>
+    <string name="pair_prereq">Grant Bluetooth permissions and turn Bluetooth on first.</string>
+    <string name="pairing_waiting">Pairing mode is on for %1$d s. Open Tab Remote on the watch and tap Pair.</string>
+    <string name="pairing_code">Code: %1$s\nConfirm only if the watch shows the same code. (%2$d s left)</string>
+    <string name="pairing_confirmed">Code: %1$s\nConfirmed here. Now confirm on the watch. (%2$d s left)</string>
+    <string name="unpair_confirm">Remove the paired watch? It will no longer be able to send commands.</string>
+
+    <string name="section_slots">Apps to open from the watch</string>
+    <string name="slots_intro">Up to four apps the watch can open. After changing them, tap Sync apps on the watch.</string>
+    <string name="slot_row">%1$d. %2$s</string>
+    <string name="slot_unset">Not set</string>
+    <string name="choose_app_title">App for slot %1$d</string>
+
+    <string name="section_test">Test on this tablet</string>
+    <string name="test_intro">Runs the commands locally, without a watch.</string>
+    <string name="test_lock">Lock</string>
+    <string name="test_play_pause">Play/Pause</string>
+    <string name="test_vol_up">Volume +</string>
+    <string name="test_vol_down">Volume −</string>
+    <string name="test_ring">Ring</string>
+    <string name="test_close_app">Close current app (after 3 s)</string>
+    <string name="test_open_slot">Open slot %1$d</string>
+    <string name="test_switch_slot">Switch to slot %1$d (close current, open)</string>
+    <string name="res_ok">Done</string>
+    <string name="res_a11y">Accessibility service is not enabled</string>
+    <string name="res_nothing_to_close">Nothing to close</string>
+    <string name="res_slot_empty">App slot not set</string>
+    <string name="res_start_failed">Could not open the app</string>
+    <string name="res_failed">Failed</string>
+</resources>
