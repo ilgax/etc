@@ -6,6 +6,11 @@ plugins {
 
 android {
     namespace = "dev.ilgax.utils.core"
+    buildFeatures {
+        aidl = true
+        buildConfig = true
+    }
+    defaultConfig.consumerProguardFiles("consumer-rules.pro")
     testOptions.unitTests.isReturnDefaultValues = true
 }
 
@@ -23,4 +28,5 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
 }

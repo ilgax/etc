@@ -13,6 +13,9 @@ object Protocol {
 
     /** Readable (long read) + notify. Read: authenticated update offer after GET_OFFER. Notify: unauthenticated "check for an offer" ping. */
     val OFFER_UUID: UUID = UUID.fromString("9c4e7a12-3b58-4f6d-8e21-6a0d5b7c9f34")
+    /** Readable (long read): one authenticated page of the macro list after SYNC_MACROS. Absent on Utils builds without macros. */
+    val MACROS_UUID: UUID = UUID.fromString("e1c2a7d4-5b39-4a86-bd10-72f3c8a94e55")
+
     /** Standard Client Characteristic Configuration descriptor. */
     val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
@@ -22,6 +25,10 @@ object Protocol {
     const val TAG_SIZE = 16
     const val MAX_ARGS = 3
     const val APP_SLOTS = 4
+    /** First byte of an OFFER notification: "check for an update offer". */
+    const val PING_OFFER: Byte = 1
+    /** First byte of an OFFER notification: "the macro list changed, sync it". Old watches treat any ping as an offer check. */
+    const val PING_MACROS: Byte = 2
     const val KEY_SIZE = 32
     const val PAIRING_WINDOW_MS = 2 * 60 * 1000L
 }

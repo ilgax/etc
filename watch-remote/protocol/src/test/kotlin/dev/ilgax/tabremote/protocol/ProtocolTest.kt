@@ -66,7 +66,7 @@ class ProtocolTest {
 
     @Test fun allCommandIdsMap() {
         Command.entries.forEach { assertEquals(it, Command.fromId(it.id)) }
-        assertNull(Command.fromId(13))
+        assertNull(Command.fromId(15))
         assertNull(Command.fromId(-1))
         assertEquals(Status.FAILED, Status.fromStatus(0x90))
         assertEquals(Status.UNKNOWN, Status.fromStatus(0x7F))
@@ -137,7 +137,7 @@ class ProtocolTest {
         assertEquals(Command.HELLO, Command.fromId(10))
         assertEquals(Command.GET_OFFER, Command.fromId(11))
         assertEquals(Command.UPDATE_STATE, Command.fromId(12))
-        assertNull(Command.fromId(13))
+        assertNull(Command.fromId(15))
         assertEquals(Status.NOTHING_TO_CLOSE, Status.fromStatus(0x94))
         assertEquals(Status.SLOT_EMPTY, Status.fromStatus(0x95))
         assertEquals(Status.APP_START_FAILED, Status.fromStatus(0x96))

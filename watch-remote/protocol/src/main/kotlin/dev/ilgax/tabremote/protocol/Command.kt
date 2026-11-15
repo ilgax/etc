@@ -18,7 +18,14 @@ enum class Command(val id: Int) {
     /** Grants one authenticated read of the OFFER characteristic; the payload is bound to this frame's nonce. */
     GET_OFFER(11),
     /** 2 arg bytes: [UpdateReport] phase and value, so the tablet can show the watch's update progress. */
-    UPDATE_STATE(12);
+    UPDATE_STATE(12),
+    /**
+     * 3 arg bytes: macro id, big-endian ([MacroList.encodeId]). Answers as soon as the macro is accepted and started
+     * (SUCCESS = "started"); [Status.MACRO_BUSY] if another macro is running, [Status.MACRO_NOT_FOUND] for an unknown or empty macro.
+     */
+    RUN_MACRO(13),
+    /** 2 arg bytes: page index, big-endian ([MacroList.encodePage]). Grants one authenticated read of the MACROS characteristic. */
+    SYNC_MACROS(14);
 
     companion object {
         fun fromId(id: Int): Command? = entries.firstOrNull { it.id == id }
