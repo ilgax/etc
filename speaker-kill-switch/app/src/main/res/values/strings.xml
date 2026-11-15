@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Speaker Kill Switch</string>
+    <string name="tile_label">Speaker kill</string>
+</resources>
