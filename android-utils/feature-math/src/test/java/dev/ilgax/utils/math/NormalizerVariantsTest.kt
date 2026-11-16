@@ -35,6 +35,17 @@ class NormalizerVariantsTest {
         assertEquals("\\mathrm{e}^{x}=2", n("\\operatorname{e}^{x}=2"))
         assertEquals("\\pi x=3", n("\\pi x = 3"))
     }
+    @Test fun trigDegreePercentAndBarVariants() {
+        assertEquals("\\sin30°=\\frac{1}{2}", n("\\operatorname{sin} 30^{\\circ} = \\frac{1}{2}"))
+        assertEquals("\\cos60°", n("cos 60^\\circ"))
+        assertEquals("\\tan45°", n("\\tan 45\\degree"))
+        assertEquals("(20/100)x=15", n("\\%20 x = 15"))
+        assertEquals("(20/100)x=15", n("20 \\% x = 15"))
+        assertEquals("(20/100)x=15", n("%20x=15"))
+        assertEquals("|x-1|=2", n("\\vert x-1\\vert = 2"))
+        assertEquals("|x-1|=2", n("\\mid x-1 \\mid = 2"))
+        assertEquals("|x-1|=2", n("\\left\\lvert x-1\\right\\rvert = 2"))
+    }
     @Test fun existingRulesAreUntouched() {
         // \times is always the variable x; digit-dot-digit follows the setting
         assertEquals("2xh=8", n("2 \\times h = 8"))

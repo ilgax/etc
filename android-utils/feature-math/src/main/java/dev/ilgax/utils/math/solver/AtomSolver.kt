@@ -38,6 +38,7 @@ internal class AtomSolver(
         is Atom.Rad -> a.arg.variables.userVars
         is Atom.Pow -> a.exp.variables.userVars
         is Atom.Log -> a.arg.variables.userVars
+        is Atom.Trig -> setOf(a.v)
     }
 
     private fun exact(): SolveResult {

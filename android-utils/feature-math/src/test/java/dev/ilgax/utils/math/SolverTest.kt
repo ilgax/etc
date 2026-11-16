@@ -82,8 +82,8 @@ class SolverTest {
     @Test fun exponentOfSum() = assertEquals(listOf("x = ±4"), plain("(x)^{2}=16"))
 
     // ---- failures are messages, not crashes ----
-    @Test fun unsupportedSymbol() = failed("\\sin x=1")
-    @Test fun trigIsUnsupported() = failed("\\cos x=0")
+    @Test fun unsupportedSymbol() = failed("\\sinh x=1")
+    @Test fun trigWithMixedArgumentsIsUnsupported() = failed("\\cos x=\\sin 2x")
     @Test fun twoUnknownsOneEquation() = failed("x+y=3")
     @Test fun garbage() = failed("))((")
     @Test fun emptyRhs() = failed("x=")

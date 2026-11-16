@@ -55,6 +55,7 @@ import dev.ilgax.utils.core.ui.components.UIcon
 import dev.ilgax.utils.core.ui.components.WarningCard
 import dev.ilgax.utils.math.normalize.DotMeaning
 import dev.ilgax.utils.math.normalize.SolvePipeline
+import dev.ilgax.utils.math.solver.AngleMode
 import dev.ilgax.utils.math.recognition.ManifestException
 import dev.ilgax.utils.math.solver.SolveResult
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +75,7 @@ data class MathUiState(
     val showTimings: Boolean = true,
     val importError: String? = null,
     val tryText: String = "",
+    val angles: AngleMode = AngleMode.Auto,
 ) {
     val method get() = chooseMethod(shizuku == ShizukuStatus.Ready, accessibilityOn)
 }
@@ -86,6 +88,7 @@ class MathActions(
     val onDeleteModel: (String) -> Unit = {},
     val onImport: () -> Unit = {},
     val onDot: (DotMeaning) -> Unit = {},
+    val onAngles: (AngleMode) -> Unit = {},
     val onCorrections: (Boolean) -> Unit = {},
     val onShowTimings: (Boolean) -> Unit = {},
     val onExport: () -> Unit = {},
@@ -109,6 +112,7 @@ internal fun MathDetail(contentPadding: PaddingValues, modifier: Modifier) {
     val a11yService by A11y.service.collectAsStateWithLifecycle()
     val connected = a11yService != null
     val dot by prefs.dot.collectAsStateWithLifecycle()
+    val angles by prefs.angles.collectAsStateWithLifecycle()
     val corrections by prefs.corrections.collectAsStateWithLifecycle()
     val showTimings by prefs.showTimings.collectAsStateWithLifecycle()
     val selected by prefs.selectedModel.collectAsStateWithLifecycle()
@@ -156,6 +160,7 @@ internal fun MathDetail(contentPadding: PaddingValues, modifier: Modifier) {
         showTimings = showTimings,
         importError = importError,
         tryText = tryText,
+        angles = angles,
     )
     MathScreen(
         state = state,
@@ -167,6 +172,7 @@ internal fun MathDetail(contentPadding: PaddingValues, modifier: Modifier) {
             onDeleteModel = { id -> scope.launch { recognizer.delete(id) } },
             onImport = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
             onDot = prefs::setDot,
+            onAngles = prefs::setAngles,
             onCorrections = prefs::setCorrections,
             onShowTimings = prefs::setShowTimings,
             onExport = { exportLauncher.launch("solve-corrections.zip") },
@@ -192,6 +198,7 @@ fun MathScreen(
         SetupGroup(state, actions)
         ModelGroup(state, actions)
         DotGroup(state, actions)
+        AnglesGroup(state, actions)
         CorrectionsGroup(state, actions)
         DiagnosticsGroup(state, actions)
         TryGroup(state, actions)
@@ -321,6 +328,23 @@ private fun DotGroup(state: MathUiState, actions: MathActions) {
 }
 
 @Composable
+private fun AnglesGroup(state: MathUiState, actions: MathActions) {
+    SettingsGroup(title = stringResource(R.string.math_group_angles)) {
+        for ((mode, title, hint) in listOf(
+            Triple(AngleMode.Auto, R.string.math_angles_auto, R.string.math_angles_auto_hint),
+            Triple(AngleMode.Degrees, R.string.math_angles_degrees, R.string.math_angles_degrees_hint),
+            Triple(AngleMode.Radians, R.string.math_angles_radians, R.string.math_angles_radians_hint),
+        )) {
+            SettingsRow(
+                label = stringResource(title),
+                onClick = { actions.onAngles(mode) },
+                leading = { RadioButton(selected = state.angles == mode, onClick = null) },
+            ) { Text(stringResource(hint), style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
+
+@Composable
 private fun CorrectionsGroup(state: MathUiState, actions: MathActions) {
     SettingsGroup(title = stringResource(R.string.math_group_corrections)) {
         SwitchRow(
@@ -368,7 +392,7 @@ private fun TryGroup(state: MathUiState, actions: MathActions) {
                 minLines = 1,
                 maxLines = 4,
             )
-            val result = remember(state.tryText, state.dot) { if (state.tryText.isBlank()) null else SolvePipeline.run(state.tryText, state.dot) }
+            val result = remember(state.tryText, state.dot, state.angles) { if (state.tryText.isBlank()) null else SolvePipeline.run(state.tryText, state.dot, angles = state.angles) }
             if (result != null) {
                 val solved = result as? SolveResult.Solved
                 renderer(

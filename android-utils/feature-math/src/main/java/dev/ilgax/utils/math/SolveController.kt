@@ -58,6 +58,8 @@ class SolveController private constructor(context: Context) {
     private var originalLatex = ""
     private var initialText = ""
     private var target: Char? = null
+    /** Percentages the recognised text contained, for the "Write %20 as 20/100" step after the card text was normalised. */
+    private var percents: List<dev.ilgax.utils.math.normalize.PercentUse> = emptyList()
     private var lastSavedText: String? = null
     private var recognizeJob: Job? = null
     private var solveJob: Job? = null
@@ -189,6 +191,7 @@ class SolveController private constructor(context: Context) {
                 originalLatex = rec.latex
                 val n = LatexNormalizer.normalize(rec.latex, prefs.dot.value)
                 target = n.target
+                percents = n.percents
                 initialText = n.latex
                 if (n.latex.isBlank()) {
                     floating.card = CardUi(reading = false, message = app.getString(R.string.math_card_no_text), timings = timingsText())
@@ -216,7 +219,7 @@ class SolveController private constructor(context: Context) {
         val t = timings
         solveJob = scope.launch {
             if (!immediately) delay(DEBOUNCE_MS)
-            val result = withContext(Dispatchers.Default) { SolvePipeline.run(text, prefs.dot.value, target) }
+            val result = withContext(Dispatchers.Default) { SolvePipeline.run(text, prefs.dot.value, target, prefs.angles.value, percents) }
             if (immediately) t.mark(Stage.SolveDone)
             floating.card = floating.card?.copy(result = result, timings = timingsText())
             if (!immediately) logCorrection(text, result)

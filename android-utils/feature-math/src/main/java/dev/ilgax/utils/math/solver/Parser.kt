@@ -16,6 +16,13 @@ sealed interface Node {
     data class Const(val symbol: Char) : Node
     /** "ln" (base e, [base] null) or "log" with an explicit base. */
     data class Func(val name: String, val base: Node?, val arg: Node) : Node
+    /** |arg|, also written \\lvert..\\rvert, \\vert, \\mid and (as a norm) \\lVert..\\rVert. */
+    data class Abs(val arg: Node) : Node
+    /**
+     * sin, cos, tan, cot, sec, csc or arcsin, arccos, arctan. [deg] is the angle unit: the argument of a forward function
+     * (and the value of an inverse one) is in degrees when true, in radians when false.
+     */
+    data class Trig(val name: String, val arg: Node, val deg: Boolean) : Node
 }
 
 /**
@@ -35,12 +42,20 @@ object LatexParser {
         "\\le" to "<=", "\\leq" to "<=", "\\leqslant" to "<=", "\\ge" to ">=", "\\geq" to ">=", "\\geqslant" to ">=",
         "\\lt" to "<", "\\gt" to ">",
     )
-    private val trig = setOf("\\sin", "\\cos", "\\tan", "\\cot", "\\sec", "\\csc", "\\arcsin", "\\arccos", "\\arctan", "\\sinh", "\\cosh", "\\tanh")
+    private val trigFns = setOf("\\sin", "\\cos", "\\tan", "\\cot", "\\sec", "\\csc", "\\arcsin", "\\arccos", "\\arctan")
+    private val hyperbolic = setOf("\\sinh", "\\cosh", "\\tanh")
+    /** Every spelling of a vertical bar the model or LaTeX may produce; all are absolute-value delimiters. */
+    private val bars = setOf("\\lvert", "\\rvert", "\\vert", "\\mid", "\\lVert", "\\rVert", "\\Vert")
+    private val circ = Regex("""^\^\s*(?:\{\s*\\circ\s*\}|\\circ(?![a-zA-Z]))""")
     private val skipCommands = setOf("\\,", "\\;", "\\!", "\\:", "\\ ", "\\quad", "\\qquad", "\\left", "\\right", "\\displaystyle", "\\textstyle", "\\big", "\\Big")
 
     /** Splits [input] into lines (by `\\` or newline) and each line into `=`-separated parts. */
-    fun parse(input: String, target: Char? = null): List<ParsedLine> {
+    fun parse(input: String, target: Char? = null, angles: AngleMode = AngleMode.Auto): List<ParsedLine> {
         val toks = tokenize(input)
+        // Angle unit of bare numbers: Auto is degrees when a degree sign appears or π does not, radians otherwise
+        val hasDegree = toks.any { it.type == T.OP && it.text == "°" }
+        val hasPi = toks.any { it.type == T.CMD && it.text == "\\pi" }
+        val deg = when (angles) { AngleMode.Degrees -> true; AngleMode.Radians -> false; AngleMode.Auto -> hasDegree || !hasPi }
         val letters = toks.filter { it.type == T.ID }.map { it.text[0] }.toSet()
         // `e` is Euler's number, except when it is the only letter of an equation or the unknown asked for (target line)
         val hasRelation = toks.any { relationOf(it) != null }
@@ -50,7 +65,7 @@ object LatexParser {
         for (i in 0..toks.size) {
             if (i == toks.size || toks[i].type == T.BREAK) {
                 val slice = toks.subList(from, i)
-                if (slice.isNotEmpty()) lines += parseLine(input, slice, eConst)
+                if (slice.isNotEmpty()) lines += parseLine(input, slice, eConst, deg)
                 from = i + 1
             }
         }
@@ -64,7 +79,7 @@ object LatexParser {
         else -> null
     }
 
-    private fun parseLine(input: String, slice: List<Tok>, eConst: Boolean): ParsedLine {
+    private fun parseLine(input: String, slice: List<Tok>, eConst: Boolean, deg: Boolean): ParsedLine {
         val parts = ArrayList<List<Tok>>()
         val ops = ArrayList<String>()
         var depth = 0
@@ -80,7 +95,7 @@ object LatexParser {
         }
         parts += cur
         if (parts.any { it.isEmpty() }) throw UnsupportedMath(if (ops.all { it == "=" }) "an equation is missing one side" else "an inequality is missing one side")
-        val nodes = parts.map { p -> Parser(p, eConst).parseAll() }
+        val nodes = parts.map { p -> Parser(p, eConst, deg).parseAll() }
         val sources = parts.map { p -> input.substring(p.first().start, p.last().end).trim() }
         return ParsedLine(nodes, sources, ops)
     }
@@ -112,16 +127,24 @@ object LatexParser {
                         if ((name == "\\mathrm" || name == "\\operatorname") && s.startsWith("{e}", j)) {
                             out += Tok(T.CMD, "\\eulere", i, j + 3); j += 3
                         } else if (name == "\\colon") out += Tok(T.OP, "/", i, j)
+                        else if (name in bars) out += Tok(T.OP, "|", i, j)
+                        else if (name == "\\degree" || name == "\\circ") out += Tok(T.OP, "°", i, j)
                         else if (name !in skipCommands) out += Tok(T.CMD, name, i, j)
                         i = j
                     } else if (i + 1 < s.length) {
                         val name = s.substring(i, i + 2)
                         if (name in skipCommands) i += 2
                         else if (s[i + 1] == '{' || s[i + 1] == '}') { out += Tok(T.OP, s[i + 1].toString(), i, i + 2); i += 2 }
+                        else if (s[i + 1] == '|') { out += Tok(T.OP, "|", i, i + 2); i += 2 }
                         else { out += Tok(T.CMD, name, i, i + 2); i += 2 }
                     } else i++
                 }
-                c in "+-*/^=(){}[]_<>" -> { out += Tok(T.OP, c.toString(), i, i + 1); i++ }
+                c == '^' && circ.containsMatchIn(s.substring(i)) -> {
+                    val len = circ.find(s.substring(i))!!.value.length
+                    out += Tok(T.OP, "°", i, i + len); i += len
+                }
+                c == '°' -> { out += Tok(T.OP, "°", i, i + 1); i++ }
+                c in "+-*/^=(){}[]_<>|" -> { out += Tok(T.OP, c.toString(), i, i + 1); i++ }
                 c == ':' -> { out += Tok(T.OP, "/", i, i + 1); i++ }
                 c == 'π' -> { out += Tok(T.CMD, "\\pi", i, i + 1); i++ }
                 c == '≤' -> { out += Tok(T.CMD, "\\le", i, i + 1); i++ }
@@ -136,9 +159,11 @@ object LatexParser {
         return out
     }
 
-    private class Parser(tokens: List<Tok>, private val eConst: Boolean) {
+    private class Parser(tokens: List<Tok>, private val eConst: Boolean, private val deg: Boolean) {
         private val toks = ArrayList(tokens)
         private var pos = 0
+        /** How many `|…|` are open: a bar after an operand closes one of them, otherwise it opens a new one. */
+        private var absDepth = 0
 
         private fun peek(): Tok? = toks.getOrNull(pos)
         private fun isOp(t: Tok?, op: String) = t != null && t.type == T.OP && t.text == op
@@ -185,8 +210,8 @@ object LatexParser {
 
         private fun startsAtom(t: Tok) = when (t.type) {
             T.NUM, T.ID -> true
-            T.OP -> t.text == "(" || t.text == "{" || t.text == "["
-            T.CMD -> t.text in setOf("\\frac", "\\dfrac", "\\tfrac", "\\sqrt", "\\pi", "\\eulere", "\\ln", "\\lg", "\\log", "\\exp")
+            T.OP -> t.text == "(" || t.text == "{" || t.text == "[" || (t.text == "|" && absDepth == 0)
+            T.CMD -> t.text in setOf("\\frac", "\\dfrac", "\\tfrac", "\\sqrt", "\\pi", "\\eulere", "\\ln", "\\lg", "\\log", "\\exp") || t.text in trigFns
             else -> false
         }
 
@@ -198,7 +223,8 @@ object LatexParser {
         }
 
         private fun power(): Node {
-            val base = atom()
+            var base = atom()
+            while (isOp(peek(), "°")) { pos++; base = degrees(base) }
             if (isOp(peek(), "^")) {
                 pos++
                 return Node.Power(base, exponent())
@@ -225,12 +251,66 @@ object LatexParser {
             return if (isOp(t, "(") || isOp(t, "{") || isOp(t, "[")) atom() else power()
         }
 
+        /** `30°`: the number is in degrees. In a degree context that is just the number, otherwise it is converted to radians. */
+        private fun degrees(a: Node): Node =
+            if (deg) a else Node.Quotient(Node.Product(listOf(a, Node.Const('π'))), Node.Number(Rational.of(180)))
+
+        /**
+         * `\\sin 2x + 1`: without brackets the argument is only the run of juxtaposed factors that follows (numbers,
+         * letters, π, fractions, roots, brackets), so it stops at an operator or at the next function: `\\sin 2x\\cos x`
+         * is sin(2x)·cos(x). With brackets it is exactly the bracketed part. `\\sin^2 x` is (sin x)², `\\sin^{-1}` is arcsin.
+         */
+        private fun trigCall(base: String): Node {
+            var exp: Node? = null
+            var inverse = false
+            if (isOp(peek(), "^")) {
+                pos++
+                val e = exponent()
+                if (e is Node.Neg && e.arg == Node.Number(Rational.ONE) && !base.startsWith("arc")) {
+                    if (base in setOf("cot", "sec", "csc")) throw UnsupportedMath("an inverse $base")
+                    inverse = true
+                } else exp = e
+            }
+            val arg = trigArg()
+            // in degrees π means 180
+            val fixed = if (deg) arg.rewrite { if (it is Node.Const && it.symbol == 'π') Node.Number(Rational.of(180)) else null } else arg
+            val call = Node.Trig(if (inverse) "arc$base" else base, fixed, deg)
+            return if (exp == null) call else Node.Power(call, exp)
+        }
+
+        private fun trigArg(): Node {
+            val t = peek() ?: throw UnsupportedMath("a trigonometric function without an argument")
+            if (isOp(t, "-")) { pos++; return Node.Neg(trigArg()) }
+            if (isOp(t, "+")) { pos++; return trigArg() }
+            if (isOp(t, "(") || isOp(t, "{") || isOp(t, "[")) return atom()
+            val factors = arrayListOf(power())
+            while (true) {
+                val n = peek() ?: break
+                val more = n.type == T.NUM || n.type == T.ID || isOp(n, "(") ||
+                    (n.type == T.CMD && n.text in setOf("\\frac", "\\dfrac", "\\tfrac", "\\sqrt", "\\pi", "\\eulere"))
+                if (!more) break
+                factors += power()
+            }
+            return if (factors.size == 1) factors[0] else Node.Product(factors)
+        }
+
         /** The base after `\\log_`: a braced group or one digit/letter/constant. */
         private fun subscript(): Node {
             val t = peek() ?: throw UnsupportedMath("a missing subscript")
             if (isOp(t, "{")) return group()
             if (t.type == T.NUM && t.text.length > 1 && !t.text.contains('.')) {
                 toks[pos] = Tok(T.NUM, t.text.substring(1), t.start + 1, t.end)
+                return Node.Number(Rational.parse(t.text.substring(0, 1)))
+            }
+            return atom()
+        }
+
+        /** A part of `\frac`: a braced group, or (as TeX allows) one digit or token: `\frac12` is 1/2. */
+        private fun fracPart(): Node {
+            val t = peek() ?: throw UnsupportedMath("a missing group")
+            if (isOp(t, "{")) return group()
+            if (t.type == T.NUM && !t.text.contains('.')) {
+                if (t.text.length > 1) toks[pos] = Tok(T.NUM, t.text.substring(1), t.start + 1, t.end) else pos++
                 return Node.Number(Rational.parse(t.text.substring(0, 1)))
             }
             return atom()
@@ -263,7 +343,7 @@ object LatexParser {
                 isOp(t, "(") -> { val n = expr(); if (!isOp(peek(), ")")) throw UnsupportedMath("an unclosed parenthesis"); pos++; n }
                 isOp(t, "{") -> { pos--; group() }
                 isOp(t, "[") -> { val n = expr(); if (!isOp(peek(), "]")) throw UnsupportedMath("an unclosed bracket"); pos++; n }
-                isCmd(t, "\\frac", "\\dfrac", "\\tfrac") -> { val a = group(); val b = group(); Node.Quotient(a, b) }
+                isCmd(t, "\\frac", "\\dfrac", "\\tfrac") -> { val a = fracPart(); val b = fracPart(); Node.Quotient(a, b) }
                 isCmd(t, "\\sqrt") -> {
                     var index = 2
                     if (isOp(peek(), "[")) {
@@ -277,7 +357,16 @@ object LatexParser {
                     }
                     Node.Root(index, if (isOp(peek(), "{")) group() else atom())
                 }
-                t.type == T.CMD && t.text in trig -> throw UnsupportedMath("trigonometric functions")
+                isOp(t, "|") -> {
+                    absDepth++
+                    val n = expr()
+                    absDepth--
+                    if (!isOp(peek(), "|")) throw UnsupportedMath("an unclosed absolute value bar")
+                    pos++
+                    Node.Abs(n)
+                }
+                t.type == T.CMD && t.text in trigFns -> trigCall(t.text.substring(1))
+                t.type == T.CMD && t.text in hyperbolic -> throw UnsupportedMath("hyperbolic functions")
                 t.type == T.CMD -> throw UnsupportedMath("the symbol ${t.text}")
                 else -> throw UnsupportedMath("unexpected “${t.text}”")
             }
@@ -303,6 +392,8 @@ internal class Evaluator(val atoms: AtomTable = AtomTable()) {
         is Node.Power -> power(n)
         is Node.Root -> root(n)
         is Node.Func -> func(n)
+        is Node.Abs -> abs(n)
+        is Node.Trig -> trig(n)
     }
 
     private fun const(s: Surd) = RatFn(Poly.const(s), Poly.ONE)
@@ -353,6 +444,39 @@ internal class Evaluator(val atoms: AtomTable = AtomTable()) {
         if (!value.isRational) throw UnsupportedMath("a higher root of a surd")
         val q = NumberTheory.exactRoot(value.rational, index) ?: throw UnsupportedMath("a root that is not exact")
         return const(Surd.of(q))
+    }
+
+    private fun abs(n: Node.Abs): RatFn {
+        val a = eval(n.arg)
+        if (a.variables.isNotEmpty()) throw UnsupportedMath("an absolute value of an expression with an unknown in this position")
+        val v = constantOf(a)!!
+        return const(if (v.signum() < 0) -v else v)
+    }
+
+    /** A trigonometric value of a plain number is exact at the multiples of 15°; with the unknown inside it becomes a [Atom.Trig]. */
+    private fun trig(n: Node.Trig): RatFn {
+        val a = eval(n.arg)
+        val inverse = n.name.startsWith("arc")
+        if (a.variables.isEmpty()) {
+            val value = constantOf(a)!!
+            val tex = NodeTex.tex(n)
+            if (inverse) {
+                val d = TrigExact.inverseDeg(n.name, value) ?: throw NeedsNumeric("an inverse trigonometric value that isn't exact (like arcsin 0.3)")
+                return const(TrigExact.angle(d, n.deg))
+            }
+            val d = TrigExact.degreesOf(value, n.deg) ?: throw NeedsNumeric("a trigonometric value that isn't exact (like sin 20°)")
+            return const(TrigExact.value(n.name, d) ?: throw SolveFailure("$tex is undefined"))
+        }
+        if (inverse) throw UnsupportedMath("an inverse trigonometric function of the unknown")
+        if (a.variables.atomSyms.isNotEmpty()) throw UnsupportedMath("a trigonometric function of a root, a logarithm or a power of the unknown")
+        val vars = a.variables
+        if (vars.size != 1) throw UnsupportedMath("a trigonometric function of several unknowns")
+        val v = vars.first()
+        if (!a.den.isConstant || a.num.degreeIn(v) != 1) throw UnsupportedMath("a trigonometric function of anything but a linear expression (ax + b)")
+        val den = a.den.constant
+        val ca = a.num.coeffOf(v, 1).constant / den
+        val cb = a.num.coeffOf(v, 0).constant / den
+        return sym(atoms.trig(n.name, v, ca, cb, n.deg, NodeTex.tex(n)))
     }
 
     private fun func(n: Node.Func): RatFn {

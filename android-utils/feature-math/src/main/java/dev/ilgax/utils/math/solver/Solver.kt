@@ -17,8 +17,8 @@ sealed interface SolveResult {
 
 /** Entry point: solves already-normalised LaTeX. Never throws. */
 object MathSolver {
-    fun solve(latex: String, target: Char? = null): SolveResult = try {
-        SolveSession(target).run(latex)
+    fun solve(latex: String, target: Char? = null, angles: AngleMode = AngleMode.Auto): SolveResult = try {
+        SolveSession(target, angles).run(latex)
     } catch (e: UnsupportedMath) {
         SolveResult.Failed("it needs ${e.message}, which isn't supported")
     } catch (e: SolveFailure) {
@@ -47,7 +47,7 @@ internal sealed interface Roots {
     data object None : Roots
 }
 
-internal class SolveSession(private val target: Char?) {
+internal class SolveSession(private val target: Char?, private val angles: AngleMode = AngleMode.Auto) {
     val steps = ArrayList<Step>()
     val notes = ArrayList<String>()
     val atoms = AtomTable()
@@ -71,14 +71,25 @@ internal class SolveSession(private val target: Char?) {
     }
 
     private fun runInner(latex: String): SolveResult {
-        val lines = LatexParser.parse(latex, target)
+        val lines = LatexParser.parse(latex, target, angles)
+        val nodes = lines.flatMap { it.parts }
+        val trigVar = nodes.any { it.hasTrigVar() }
+        val absVar = nodes.any { it.hasAbsVar() }
+        if (trigVar && absVar) throw UnsupportedMath("absolute values together with trigonometric functions")
         if (lines.any { it.isInequality }) {
             if (lines.size > 1) throw UnsupportedMath("several inequalities at once")
+            if (trigVar) throw UnsupportedMath("trigonometric functions inside an inequality")
+            if (absVar) return AbsSolver(this).inequality(lines[0])
             return Inequalities(this).solve(lines[0])
+        }
+        if (absVar) {
+            if (lines.size > 1) throw UnsupportedMath("several equations with absolute values")
+            return AbsSolver(this).equation(lines[0])
         }
         val eqLines = lines.filter { it.parts.size > 1 }
         if (eqLines.isEmpty()) {
             if (lines.size > 1) throw UnsupportedMath("several separate expressions")
+            if (lines[0].parts[0].hasTrig()) return TrigExpression(this).solve(lines[0])
             return simplifyExpression(lines[0])
         }
         if (eqLines.size != lines.size) throw SolveFailure("one line has no “=”")
@@ -87,9 +98,15 @@ internal class SolveSession(private val target: Char?) {
         for (line in eqLines) {
             val values = try { line.parts.map { ev.eval(it) } } catch (e: NeedsNumeric) {
                 if (eqLines.size != 1 || line.parts.size != 2) throw e
+                if (line.parts.any { it.hasTrigVar() }) throw UnsupportedMath(e.message ?: "this trigonometric equation")
                 return NumericSearch(this, line.parts[0], line.parts[1], e.message ?: "this equation").solve()
             }
             for (i in 0 until values.size - 1) eqs += Eq(values[i], values[i + 1], line.sources[i], line.sources[i + 1])
+        }
+        if (atoms.list.any { it is Atom.Trig }) {
+            if (eqs.size > 1) throw UnsupportedMath("a system with trigonometric functions")
+            if (!atoms.list.all { it is Atom.Trig }) throw UnsupportedMath("trigonometric functions together with roots, logarithms or powers with an unknown exponent")
+            return TrigSolver(this, eqLines[0].parts[0], eqLines[0].parts[1], eqs[0]).solve()
         }
         if (!atoms.isEmpty) {
             if (eqs.size > 1) throw UnsupportedMath("a system that contains roots, logarithms or powers with an unknown exponent")
@@ -461,7 +478,8 @@ internal class SolveSession(private val target: Char?) {
 
 /** Converts the small LaTeX subset the solver prints into plain text for the clipboard. */
 fun plainOf(latex: String): String {
-    var s = latex.replace("\\pi", "π")
+    var s = latex.replace("\\pi", "π").replace("^{\\circ}", "°").replace("\\left|", "|").replace("\\right|", "|")
+        .replace("\\{", "\u0001").replace("\\}", "\u0002").replace("\\mathbb{Z}", "ℤ").replace("\\;", " ").replace("\\quad", " ")
     val frac = Regex("""\\frac\{([^{}]*)\}\{([^{}]*)\}""")
     val sqrtN = Regex("""\\sqrt\[(\d+)\]\{([^{}]*)\}""")
     val sqrt = Regex("""\\sqrt\{([^{}]*)\}""")
@@ -492,9 +510,10 @@ fun plainOf(latex: String): String {
     s = Regex("""\\le(?![a-z])""").replace(s, "≤")
     s = Regex("""\\ge(?![a-z])""").replace(s, "≥")
     s = s.replace("\\ln", "ln").replace("\\log", "log")
+    s = Regex("""\\(arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc)(?![a-z])""").replace(s) { it.groupValues[1] }
     s = s.replace("± ", "±")
-    s = Regex("(?<=[\\w√π)∞])([+-])(?=[\\w√π(∞])").replace(s) { " ${it.value} " }
-    s = s.replace("{", "").replace("}", "").replace("=", " = ").replace("≈", " ≈ ")
+    s = Regex("(?<=[\\w√π)∞°])([+-])(?=[\\w√π(∞|])").replace(s) { " ${it.value} " }
+    s = s.replace("{", "").replace("}", "").replace("=", " = ").replace("≈", " ≈ ").replace("\u0001", "{").replace("\u0002", "}")
     s = s.replace("≤", " ≤ ").replace("≥", " ≥ ").replace("∈", " ∈ ").replace("<", " < ").replace(">", " > ")
     s = s.replace("∪", " ∪ ").replace(",", ", ").replace("≠", " ≠ ")
     return s.replace(Regex("\\s+"), " ").replace(" ,", ",").trim()

@@ -56,7 +56,11 @@ object Printer {
         // common denominator: (a + b√k)/L
         var l = BigInteger.ONE
         for (q in s.terms.values) l = l.multiply(q.den).divide(l.gcd(q.den))
-        val ordered = s.terms.entries.sortedBy { it.key }
+        var ordered = s.terms.entries.sortedBy { it.key }
+        // (√6 − √2)/4 rather than (−√2 + √6)/4: when no rational part leads, start with a positive term
+        if (ordered[0].key != SKey.ONE && ordered[0].value.signum < 0 && ordered.any { it.value.signum > 0 }) {
+            ordered = ordered.filter { it.value.signum > 0 } + ordered.filter { it.value.signum < 0 }
+        }
         val sb = StringBuilder()
         for ((i, e) in ordered.withIndex()) {
             val c = e.value * Rational.of(l)

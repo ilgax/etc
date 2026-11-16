@@ -3,8 +3,18 @@ package dev.ilgax.utils.math.normalize
 /** What a "digit . digit" in the recognised text means. The user writes a raised dot to multiply. */
 enum class DotMeaning { Multiply, Decimal }
 
-/** Cleaned LaTeX for the solver; [target] is the unknown named by a trailing "x=" line, if any. */
-data class NormalizedInput(val latex: String, val target: Char?)
+/** A percent sign the normaliser rewrote: [number] is the digits, [prefix] says whether the sign came first (`%20`, as in Turkish). */
+data class PercentUse(val number: String, val prefix: Boolean) {
+    /** What was written, as LaTeX. */
+    val written get() = if (prefix) "\\%$number" else "$number\\%"
+    val plainWritten get() = if (prefix) "%$number" else "$number%"
+}
+
+/**
+ * Cleaned LaTeX for the solver; [target] is the unknown named by a trailing "x=" line, if any. [percents] lists the
+ * percentages that were turned into `(n/100)`, [notes] what was read in a particular way.
+ */
+data class NormalizedInput(val latex: String, val target: Char?, val percents: List<PercentUse> = emptyList(), val notes: List<String> = emptyList())
 
 /**
  * Turns what a handwriting model typically says into what the user meant. Pure Kotlin, no Android.
@@ -16,7 +26,14 @@ object LatexNormalizer {
     private val wrappers = Regex("""(?<!\\)\\[\[\]()]""")
     private val envs = Regex("""\\(?:begin|end)\{(?:array|aligned|align\*?|gathered|gather\*?|matrix|split|cases|eqnarray\*?|equation\*?)\}(?:\{[lcr| ]*\})?""")
     private val textLike = Regex("""\\(mathrm|mathit|mathbf|text|textrm|operatorname)\s*\{([^{}]*)\}""")
-    private val bareFunctions = Regex("""(?<![A-Za-z\\])(ln|log|exp)(?![A-Za-z])""")
+    private val bareFunctions = Regex("""(?<![A-Za-z\\])(ln|log|exp|arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc)(?![A-Za-z])""")
+    private val degreeSigns = Regex("""\^\s*\{\s*\\circ\s*\}|\^\s*\\circ(?![a-zA-Z])|\\degree(?![a-zA-Z])|\\textdegree(?![a-zA-Z])|\\circ(?![a-zA-Z])|º""")
+    private val normBars = Regex("""\\(?:lVert|rVert|Vert)(?![a-zA-Z])|\\\|""")
+    private val bars = Regex("""\\(?:lvert|rvert|vert|mid)(?![a-zA-Z])""")
+    /** `20%`, `20\%`, `20 \%`: the number comes first. */
+    private val percentSuffix = Regex("""(\d+(?:\.\d+)?)\s*\\?[%％]""")
+    /** `%20`, `\%20`, `\% 20` (Turkish: the sign comes first). */
+    private val percentPrefix = Regex("""\\?[%％]\s*(\d+(?:\.\d+)?)""")
     private val digitDotDigit = Regex("""(?<=\d)\s*\.\s*(?=\d)""")
     private val targetLine = Regex("""^\s*([A-Za-z])\s*=\s*$""")
 
@@ -33,6 +50,12 @@ object LatexNormalizer {
             if (inner.trim() == "e" && it.groupValues[1] in setOf("mathrm", "operatorname")) "\\mathrm{e}" else inner
         }
         s = bareFunctions.replace(s) { "\\" + it.groupValues[1] }
+        s = degreeSigns.replace(s, "°")
+        // vertical bars: every spelling becomes |; double bars (norms) are read as absolute values
+        val notes = ArrayList<String>()
+        if (normBars.containsMatchIn(s) || s.contains('‖')) notes += "Double bars ‖…‖ are read as an absolute value |…|"
+        s = normBars.replace(s, "|").replace("‖", "|")
+        s = bars.replace(s, "|")
 
         s = s.replace(Regex("""\\[dt]frac(?![a-zA-Z])"""), "\\\\frac")
         s = s.replace(Regex("""\\ast(?![a-zA-Z])"""), "\\\\cdot").replace("*", "\\cdot ")
@@ -48,6 +71,10 @@ object LatexNormalizer {
         val times = if (timesIsVariable) " x " else "\\cdot "
         s = s.replace(Regex("""\\times(?![a-zA-Z])""")) { times }.replace("×", times)
         if (dot == DotMeaning.Multiply) s = digitDotDigit.replace(s, "\\\\cdot ")
+        // percent: 20% and %20 are both the exact fraction 20/100
+        val percents = ArrayList<PercentUse>()
+        s = percentSuffix.replace(s) { percents += PercentUse(it.groupValues[1], false); "(${it.groupValues[1]}/100)" }
+        s = percentPrefix.replace(s) { percents += PercentUse(it.groupValues[1], true); "(${it.groupValues[1]}/100)" }
 
         // lines: `\\` and newlines separate them
         val lines = s.split("\\\\", "\n").map { it.trim().trimEnd('.', ',', ';', ':').trim().replace(':', '/') }.filter { it.isNotEmpty() }.toMutableList()
@@ -55,7 +82,7 @@ object LatexNormalizer {
         if (lines.size > 1) {
             targetLine.matchEntire(lines.last())?.let { target = it.groupValues[1][0]; lines.removeAt(lines.size - 1) }
         }
-        return NormalizedInput(lines.joinToString("\\\\") { compact(it) }, target)
+        return NormalizedInput(lines.joinToString("\\\\") { compact(it) }, target, percents.distinct(), notes)
     }
 
     /** Removes spaces, keeping the one after a `\command` that is followed by a letter (`\cdot x`). */

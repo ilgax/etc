@@ -258,6 +258,17 @@ class ScreenshotTest {
     fun solveLogRejectedRootTabletLight() =
         shot("25-solve-log-rejected-tablet-light", false, floatingScene("log-light", minimized = false, input = "\\log x+\\log(x-3)=1"))
 
+    /** 0.5.0: a trigonometric equation (solutions in one turn, general solution in the steps) and an absolute-value equation split into cases. */
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveTrigTabletLight() =
+        shot("26-solve-trig-tablet-light", false, floatingScene("trig-light", minimized = false, input = "\\sin(2x)=\\frac{\\sqrt3}{2}"))
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveAbsoluteValueCasesTabletLight() =
+        shot("27-solve-abs-cases-tablet-light", false, floatingScene("abs-light", minimized = false, input = "|x-1|+|x+2|=5"))
+
     /** KaTeX pre-rendered by headless Chrome from the same page and JSON the card's WebView gets (Robolectric cannot draw a WebView). */
     private fun withKatex(fixture: String, content: @Composable () -> Unit): @Composable () -> Unit = {
         val png = remember(fixture) { BitmapFactory.decodeStream(javaClass.getResourceAsStream("/katex/$fixture.png")!!).asImageBitmap() }

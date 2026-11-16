@@ -60,6 +60,14 @@
     <string name="math_dot_decimal">Decimal point</string>
     <string name="math_dot_decimal_hint">15.13 is read as fifteen point thirteen</string>
 
+    <string name="math_group_angles">Angles</string>
+    <string name="math_angles_auto">Auto</string>
+    <string name="math_angles_auto_hint">Degrees, unless π appears and no ° does (then radians)</string>
+    <string name="math_angles_degrees">Degrees</string>
+    <string name="math_angles_degrees_hint">sin x = 1/2 gives 30° and 150°</string>
+    <string name="math_angles_radians">Radians</string>
+    <string name="math_angles_radians_hint">sin x = 1/2 gives π/6 and 5π/6</string>
+
     <string name="math_group_corrections">Corrections log</string>
     <string name="math_corrections_save">Save corrections</string>
     <string name="math_corrections_save_hint">When you edit the recognised LaTeX and it solves, the crop and both texts are kept on this device for later fine-tuning. Nothing is sent anywhere.</string>

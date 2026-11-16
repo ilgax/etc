@@ -16,8 +16,12 @@ internal sealed class Atom(val sym: Char, val tex: String) {
     /** log_[base] of [arg]; ln is base e. */
     class Log(sym: Char, tex: String, val base: Surd, val arg: RatFn) : Atom(sym, tex)
 
+    /** sin/cos/tan/cot/sec/csc of the linear argument [a]·[v] + [b] (in degrees when [deg], else radians). */
+    class Trig(sym: Char, tex: String, val fn: String, val v: Char, val a: Surd, val b: Surd, val deg: Boolean) : Atom(sym, tex)
+
     val isConstant: Boolean
         get() = when (this) {
+            is Trig -> false
             is Rad -> arg.variables.isEmpty()
             is Pow -> exp.variables.isEmpty()
             is Log -> arg.variables.isEmpty()
@@ -46,6 +50,11 @@ internal class AtomTable {
     fun pow(base: Surd, exp: RatFn, tex: String): Atom.Pow {
         list.firstOrNull { it is Atom.Pow && it.base == base && same(it.exp, exp) }?.let { return it as Atom.Pow }
         return Atom.Pow(nextSym(), tex, base, exp).also { list += it }
+    }
+
+    fun trig(fn: String, v: Char, a: Surd, b: Surd, deg: Boolean, tex: String): Atom.Trig {
+        list.firstOrNull { it is Atom.Trig && it.fn == fn && it.v == v && it.a == a && it.b == b && it.deg == deg }?.let { return it as Atom.Trig }
+        return Atom.Trig(nextSym(), tex, fn, v, a, b, deg).also { list += it }
     }
 
     fun log(base: Surd, arg: RatFn, tex: String): Atom.Log {

@@ -3,6 +3,7 @@ package dev.ilgax.utils.math
 import android.content.Context
 import dev.ilgax.utils.math.normalize.DotMeaning
 import dev.ilgax.utils.math.recognition.ModelStore
+import dev.ilgax.utils.math.solver.AngleMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,12 @@ class MathPrefs private constructor(context: Context) {
         runCatching { DotMeaning.valueOf(prefs.getString(KEY_DOT, null) ?: "") }.getOrDefault(DotMeaning.Multiply),
     )
     val dot: StateFlow<DotMeaning> = _dot.asStateFlow()
+
+    private val _angles = MutableStateFlow(
+        runCatching { AngleMode.valueOf(prefs.getString(KEY_ANGLES, null) ?: "") }.getOrDefault(AngleMode.Auto),
+    )
+    /** Unit of the angles in trigonometric problems; see [AngleMode]. */
+    val angles: StateFlow<AngleMode> = _angles.asStateFlow()
 
     private val _corrections = MutableStateFlow(prefs.getBoolean(KEY_CORRECTIONS, true))
     val corrections: StateFlow<Boolean> = _corrections.asStateFlow()
@@ -38,11 +45,13 @@ class MathPrefs private constructor(context: Context) {
     fun setOverlayAsked(v: Boolean) { _overlayAsked.value = v; prefs.edit().putBoolean(KEY_OVERLAY_ASKED, v).apply() }
 
     fun setDot(v: DotMeaning) { _dot.value = v; prefs.edit().putString(KEY_DOT, v.name).apply() }
+    fun setAngles(v: AngleMode) { _angles.value = v; prefs.edit().putString(KEY_ANGLES, v.name).apply() }
     fun setCorrections(v: Boolean) { _corrections.value = v; prefs.edit().putBoolean(KEY_CORRECTIONS, v).apply() }
     fun setSelectedModel(id: String) { _model.value = id; prefs.edit().putString(KEY_MODEL, id).apply() }
 
     companion object {
         private const val KEY_DOT = "dot"
+        private const val KEY_ANGLES = "angles"
         private const val KEY_CORRECTIONS = "corrections"
         private const val KEY_MODEL = "model"
         private const val KEY_TIMINGS = "show_timings"

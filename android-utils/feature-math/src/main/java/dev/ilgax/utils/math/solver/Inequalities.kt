@@ -102,6 +102,12 @@ internal class Inequalities(private val s: SolveSession) {
 
     private fun step(latex: String, caption: String) = s.step(latex, caption)
 
+    /** The solution set of `l op r` in [v] (linear, or a sign chart), with its steps; used for each case of an absolute-value problem. */
+    internal fun setOf(l: RatFn, op: String, r: RatFn, v: Char, ls: String, rs: String): List<Seg> =
+        linear(l, op, r, v, ls, rs, "")?.set ?: general(l, op, r, v)
+
+    internal fun answerOf(v: Char, set: List<Seg>): SolveResult = resultOf(v, set, null)
+
     /** Linear in v with constant denominators; null otherwise. Shows its steps. */
     private fun linear(l: RatFn, op: String, r: RatFn, v: Char, ls: String, rs: String, prefix: String): Linear? {
         val c = (l - r).simplified()
