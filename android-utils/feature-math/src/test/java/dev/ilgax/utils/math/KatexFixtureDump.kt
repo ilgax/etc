@@ -23,6 +23,9 @@ class KatexFixtureDump {
         for ((name, c) in listOf(
             "result" to content("2x^{2}+144=400", true),
             "try" to content("\\frac{x}{13}=\\frac{15+x}{16}=\\frac{35+x}{y}", false),
+            // inequality with its sign chart, and a log equation with a rejected root
+            "inequality" to content("\\frac{x-1}{x+2}\\ge 0", true),
+            "log" to content("\\log x+\\log(x-3)=1", true),
         )) {
             for ((theme, col) in listOf("light" to light, "dark" to dark)) {
                 File(dir, "$name-$theme.json").writeText(c.toJson(col.first, col.second, col.third))

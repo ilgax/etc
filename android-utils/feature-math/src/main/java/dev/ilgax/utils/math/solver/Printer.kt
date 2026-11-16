@@ -15,13 +15,38 @@ object Printer {
 
     private fun sqrtText(k: BigInteger, plain: Boolean) = if (plain) "√$k" else "\\sqrt{$k}"
 
-    /** One term q√k, no leading sign handling beyond the minus. */
-    private fun term(k: BigInteger, q: Rational, plain: Boolean): String {
-        if (k == BigInteger.ONE) return rational(q, plain)
+    private val superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+    /** π^(half/2) or e^(half/2) as numerator or denominator pieces. */
+    private fun constPieces(half: Int, sym: String, plainSym: String, plain: Boolean, num: MutableList<String>, den: MutableList<String>) {
+        if (half == 0) return
+        val target = if (half > 0) num else den
+        val n = Math.abs(half)
+        val whole = n / 2
+        if (whole >= 1) {
+            target += if (plain) plainSym + (if (whole > 1) whole.toString().map { superscripts[it - '0'] }.joinToString("") else "")
+            else sym + (if (whole > 1) "^{$whole}" else "")
+        }
+        if (n % 2 == 1) target += if (plain) "√$plainSym" else "\\sqrt{$sym}"
+    }
+
+    /** One term q·√k·π^a·e^b, no leading sign handling beyond the minus. */
+    private fun term(key: SKey, q: Rational, plain: Boolean): String {
+        if (key == SKey.ONE) return rational(q, plain)
         val neg = q.signum < 0
         val a = q.num.abs()
-        val body = (if (a == BigInteger.ONE) "" else a.toString()) + sqrtText(k, plain)
-        val core = if (q.isInteger) body else if (plain) "$body/${q.den}" else "\\frac{$body}{${q.den}}"
+        val nums = ArrayList<String>()
+        val dens = ArrayList<String>()
+        if (key.k != BigInteger.ONE) nums += sqrtText(key.k, plain)
+        constPieces(key.pi, "\\pi", "π", plain, nums, dens)
+        constPieces(key.e, "e", "e", plain, nums, dens)
+        val numText = (if (a == BigInteger.ONE && nums.isNotEmpty()) "" else a.toString()) + nums.joinToString("")
+        val denText = (if (q.den == BigInteger.ONE) "" else q.den.toString()) + dens.joinToString("")
+        val core = when {
+            denText.isEmpty() -> numText
+            plain -> "${numText.ifEmpty { "1" }}/${if (q.den != BigInteger.ONE && dens.isNotEmpty() || dens.size > 1) "($denText)" else denText}"
+            else -> "\\frac{${numText.ifEmpty { "1" }}}{$denText}"
+        }
         return (if (neg) "-" else "") + core
     }
 
@@ -42,7 +67,31 @@ object Printer {
         return if (plain) "($sb)/$l" else "\\frac{$sb}{$l}"
     }
 
-    private fun mono(m: Mono): String = m.powers.entries.sortedBy { it.key }.joinToString("") { (v, e) -> if (e == 1) "$v" else "$v^{$e}" }
+    /** Resolves atom placeholder symbols to their LaTeX while a solve is running (per thread). */
+    val atomTex = ThreadLocal<((Char) -> String?)?>()
+
+    private fun varText(v: Char, e: Int): String {
+        val t = if (AtomTable.isAtomSym(v)) atomTex.get()?.invoke(v) else null
+        if (t == null) return if (e == 1) "$v" else "$v^{$e}"
+        return if (e == 1) t else "($t)^{$e}"
+    }
+
+    private fun mono(m: Mono): String {
+        val sb = StringBuilder()
+        for ((v, e) in m.powers.entries.sortedBy { it.key }) {
+            val piece = varText(v, e)
+            if (sb.isNotEmpty() && piece[0].isDigit()) sb.append("\\cdot ")
+            sb.append(piece)
+        }
+        return sb.toString()
+    }
+
+    /** A real number for display: [dp] decimals, trailing zeros dropped. */
+    fun num(d: Double, dp: Int = 4): String {
+        if (d.isNaN() || d.isInfinite()) return "?"
+        val t = BigDecimal(d).setScale(dp, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+        return if (t == "-0") "0" else t
+    }
 
     fun poly(p: Poly): String {
         if (p.isZero) return "0"
@@ -55,13 +104,15 @@ object Printer {
             val text = when {
                 m.isConstant -> surd(mag)
                 mag == Surd.ONE -> mono(m)
-                mag.isSingleTerm || mag.isRational -> surd(mag) + mono(m)
+                mag.isSingleTerm || mag.isRational -> surd(mag) + dotIfDigit(mono(m))
                 else -> "(" + surd(mag) + ")" + mono(m)
             }
             if (i == 0) sb.append(if (neg) "-" else "").append(text) else sb.append(if (neg) "-" else "+").append(text)
         }
         return sb.toString()
     }
+
+    private fun dotIfDigit(m: String) = if (m.isNotEmpty() && m[0].isDigit()) "\\cdot $m" else m
 
     /** Sign of a coefficient for printing: the sign of its first printed term. */
     private fun isNegative(c: Surd): Boolean = c.terms.entries.minByOrNull { it.key }!!.value.signum < 0
@@ -91,7 +142,8 @@ object Printer {
     fun decimal(s: Surd): Decimal? {
         if (s.isRational && s.rational.isInteger) return null
         val bd = s.toBigDecimal()
-        val rounded = bd.setScale(2, RoundingMode.HALF_UP).let { if (it.signum() == 0 && bd.signum() != 0) bd.round(java.math.MathContext(3)) else it }
+        val scale = if (s.hasConstants) 3 else 2
+        val rounded = bd.setScale(scale, RoundingMode.HALF_UP).let { if (it.signum() == 0 && bd.signum() != 0) bd.round(java.math.MathContext(3)) else it }
         val exact = s.isRational && runCatching { BigDecimal(s.rational.num).divide(BigDecimal(s.rational.den)) }.getOrNull()?.let { it.scale() <= 4 } == true
         if (exact) {
             val v = BigDecimal(s.rational.num).divide(BigDecimal(s.rational.den)).stripTrailingZeros()

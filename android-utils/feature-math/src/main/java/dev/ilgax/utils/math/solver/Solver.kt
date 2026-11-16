@@ -36,36 +36,64 @@ internal class SolveFailure(message: String) : Exception(message)
 
 private class Contradiction : Exception()
 
-private class Eq(val l: RatFn, val r: RatFn, val lSrc: String, val rSrc: String) {
+internal class Eq(val l: RatFn, val r: RatFn, val lSrc: String, val rSrc: String) {
     fun substitute(v: Char, x: Surd) = Eq(l.substitute(v, x), r.substitute(v, x), lSrc, rSrc)
     val diff: Poly get() = l.num * r.den - r.num * l.den
 }
 
-private sealed interface Roots {
-    data class Some(val values: List<Surd>) : Roots
+internal sealed interface Roots {
+    data class Some(val values: List<Val>) : Roots
     data object All : Roots
     data object None : Roots
 }
 
-private class SolveSession(private val target: Char?) {
-    private val steps = ArrayList<Step>()
-    private val notes = ArrayList<String>()
+internal class SolveSession(private val target: Char?) {
+    val steps = ArrayList<Step>()
+    val notes = ArrayList<String>()
+    val atoms = AtomTable()
 
-    private fun step(latex: String, caption: String) { steps += Step(latex, caption) }
-    private fun note(t: String) { if (t !in notes) notes += t }
+    fun step(latex: String, caption: String) { steps += Step(latex, caption) }
+    fun note(t: String) { if (t !in notes) notes += t }
+
+    /** Runs [block] without leaving steps or notes behind (used to look at roots silently). */
+    fun <T> quiet(block: () -> T): T {
+        val s = steps.size
+        val n = notes.size
+        try { return block() } finally {
+            while (steps.size > s) steps.removeAt(steps.size - 1)
+            while (notes.size > n) notes.removeAt(notes.size - 1)
+        }
+    }
 
     fun run(latex: String): SolveResult {
-        val lines = LatexParser.parse(latex)
+        Printer.atomTex.set { c -> atoms[c]?.tex }
+        try { return runInner(latex) } finally { Printer.atomTex.remove() }
+    }
+
+    private fun runInner(latex: String): SolveResult {
+        val lines = LatexParser.parse(latex, target)
+        if (lines.any { it.isInequality }) {
+            if (lines.size > 1) throw UnsupportedMath("several inequalities at once")
+            return Inequalities(this).solve(lines[0])
+        }
         val eqLines = lines.filter { it.parts.size > 1 }
         if (eqLines.isEmpty()) {
             if (lines.size > 1) throw UnsupportedMath("several separate expressions")
             return simplifyExpression(lines[0])
         }
         if (eqLines.size != lines.size) throw SolveFailure("one line has no “=”")
+        val ev = Evaluator(atoms)
         val eqs = ArrayList<Eq>()
         for (line in eqLines) {
-            val values = line.parts.map { Evaluator.eval(it) }
+            val values = try { line.parts.map { ev.eval(it) } } catch (e: NeedsNumeric) {
+                if (eqLines.size != 1 || line.parts.size != 2) throw e
+                return NumericSearch(this, line.parts[0], line.parts[1], e.message ?: "this equation").solve()
+            }
             for (i in 0 until values.size - 1) eqs += Eq(values[i], values[i + 1], line.sources[i], line.sources[i + 1])
+        }
+        if (!atoms.isEmpty) {
+            if (eqs.size > 1) throw UnsupportedMath("a system that contains roots, logarithms or powers with an unknown exponent")
+            return AtomSolver(this, ev, eqLines[0].parts[0], eqLines[0].parts[1], eqs[0]).solve()
         }
         return try { solveEquations(eqs) } catch (c: Contradiction) {
             step("", "The equations contradict each other")
@@ -76,19 +104,30 @@ private class SolveSession(private val target: Char?) {
     // ------------------------------------------------------------------ expression
 
     private fun simplifyExpression(line: ParsedLine): SolveResult {
-        val raw = Evaluator.eval(line.parts[0])
+        val node = line.parts[0]
+        val ev = Evaluator(atoms)
+        val raw = ev.eval(node)
+        if (!atoms.isEmpty) return LogExpression(this, ev).simplify(raw)
+        val hasLogs = node.hasFunc()
         val c = raw.simplified()
         val rawText = Printer.ratFn(raw)
         val finalText = Printer.ratFn(c.value)
-        if (strip(rawText) != strip(line.sources[0])) step(rawText, "Multiply out")
+        if (hasLogs) {
+            val shown = NodeTex.tex(node.mapFuncs { f ->
+                val r = ev.constantOf(ev.eval(f))!!.rational
+                if (r.signum < 0) Node.Neg(Node.Number(-r)) else Node.Number(r)
+            })
+            step(shown, "Evaluate each logarithm")
+            if (strip(shown) != strip(finalText)) step(finalText, "Simplify")
+        } else if (strip(rawText) != strip(line.sources[0])) step(rawText, "Multiply out")
         if (!c.factor.isConstant) {
             step(finalText, "Cancel ${Printer.poly(c.factor)}")
             excludeFactor(c.factor)
-        } else if (strip(rawText) != strip(finalText)) {
+        } else if (!hasLogs && strip(rawText) != strip(finalText)) {
             step(finalText, "Simplify")
         }
         val value = c.value.takeIf { it.num.isConstant && it.den.isConstant }?.let { it.num.constant }
-        val answer = if (value != null) valueAnswer(null, value) else Answer(finalText, plainOf(finalText))
+        val answer = if (value != null) valueAnswer(null, Val.of(value)) else Answer(finalText, plainOf(finalText))
         return SolveResult.Solved(listOf(answer), steps, notes)
     }
 
@@ -111,8 +150,8 @@ private class SolveSession(private val target: Char?) {
                 return SolveResult.Solved(vars.map { Answer("$it\\text{ can be any number}", "$it can be any number") }, steps, notes)
             }
         }
-        val known = LinkedHashMap<Char, Surd>()
-        val multi = LinkedHashMap<Char, List<Surd>>()
+        val known = LinkedHashMap<Char, Val>()
+        val multi = LinkedHashMap<Char, List<Val>>()
         var pending: List<Eq> = all
         var identityVars = emptyList<Char>()
         var anyUnknown = false
@@ -134,11 +173,12 @@ private class SolveSession(private val target: Char?) {
                         } else {
                             known[v] = roots.values[0]
                             if (pending.isNotEmpty()) {
-                                pending = pending.map { it.substitute(v, roots.values[0]) }
+                                val exact = roots.values[0].exact ?: throw UnsupportedMath("a system whose solution is only approximate")
+                                pending = pending.map { it.substitute(v, exact) }
                                 val shown = pending.firstOrNull()
                                 if (shown != null) step(
                                     "${Printer.ratFn(shown.l.simplified().value)}=${Printer.ratFn(shown.r.simplified().value)}",
-                                    "Substitute ${v} = ${plainOf(Printer.surd(roots.values[0]))}",
+                                    "Substitute ${v} = ${plainOf(Printer.surd(exact))}",
                                 )
                             }
                         }
@@ -154,7 +194,7 @@ private class SolveSession(private val target: Char?) {
                 continue
             }
             // several unknowns: linear system
-            known += solveLinearSystem(pending)
+            known += solveLinearSystem(pending).mapValues { Val.of(it.value) }
             pending = emptyList()
         }
         if (!anyUnknown && known.isEmpty()) {
@@ -173,12 +213,13 @@ private class SolveSession(private val target: Char?) {
 
     // ------------------------------------------------------------------ one unknown
 
-    private fun solveOne(eq: Eq, v: Char): Roots {
+    /** [check] off: the caller verifies candidates against the original problem itself. */
+    internal fun solveOne(eq: Eq, v: Char, check: Boolean = true): Roots {
         val lc = eq.l.simplified()
         val rc = eq.r.simplified()
         val ls = lc.value
         val rs = rc.value
-        val excluded = ArrayList<Surd>()
+        val excluded = ArrayList<Val>()
         val simplifiedText = "${Printer.ratFnNice(ls)}=${Printer.ratFnNice(rs)}"
         if (strip(simplifiedText).length < strip("${eq.lSrc}=${eq.rSrc}").length) step(simplifiedText, "Simplify each side")
 
@@ -192,14 +233,14 @@ private class SolveSession(private val target: Char?) {
             a = ls.num
             b = rs.num
             step("${Printer.poly(a)}=${Printer.poly(b)}", "Multiply both sides by ${Printer.poly(ls.den).let { if (ls.den.terms.size > 1) "($it)" else it }}")
-            if (excluded.isNotEmpty()) note("Excluded: " + excluded.distinct().joinToString(", ") { "$v ≠ ${plainOf(Printer.surd(it))}" })
+            if (excluded.isNotEmpty()) note("Excluded: " + excluded.distinctBy { it.d }.joinToString(", ") { "$v ≠ ${plainOf(it.texOrDecimal())}" })
         } else if (hasFractions) {
             a = ls.num * rs.den
             b = rs.num * ls.den
             step("${Printer.product(ls.num, rs.den)}=${Printer.product(rs.num, ls.den)}", "Cross-multiply")
             val expanded = "${Printer.poly(a)}=${Printer.poly(b)}"
             if (strip(expanded) != strip("${Printer.product(ls.num, rs.den)}=${Printer.product(rs.num, ls.den)}")) step(expanded, "Expand")
-            if (excluded.isNotEmpty()) note("Excluded: " + excluded.distinct().joinToString(", ") { "$v ≠ ${plainOf(Printer.surd(it))}" })
+            if (excluded.isNotEmpty()) note("Excluded: " + excluded.distinctBy { it.d }.joinToString(", ") { "$v ≠ ${plainOf(it.texOrDecimal())}" })
         } else {
             val lcm = denominatorLcm(ls.num, rs.num)
             if (lcm != BigInteger.ONE) {
@@ -215,14 +256,14 @@ private class SolveSession(private val target: Char?) {
         val p = a - b
         val roots = solvePolynomial(p, a, b, v)
         if (roots !is Roots.Some) return roots
-        val kept = roots.values.filter { r -> excluded.none { it == r } }
+        val kept = roots.values.filter { r -> excluded.none { it.sameAs(r) } }
         if (kept.size < roots.values.size) {
-            val dropped = roots.values - kept.toSet()
-            note("Rejected $v = ${dropped.joinToString(", ") { plainOf(Printer.surd(it)) }}: it makes a denominator 0")
-            step("$v=${dropped.joinToString(",") { Printer.surd(it) }}", "Rejected: denominator would be 0")
+            val dropped = roots.values.filter { it !in kept }
+            note("Rejected $v = ${dropped.joinToString(", ") { plainOf(it.texOrDecimal()) }}: it makes a denominator 0")
+            step("$v=${dropped.joinToString(",") { it.texOrDecimal() }}", "Rejected: denominator would be 0")
         }
         if (kept.isEmpty()) return Roots.None
-        check(ls, rs, v, kept)
+        if (check) check(ls, rs, v, kept)
         return Roots.Some(kept)
     }
 
@@ -237,22 +278,22 @@ private class SolveSession(private val target: Char?) {
         return l
     }
 
-    private fun rootsOrEmpty(f: Poly, v: Char): List<Surd> = try {
+    internal fun rootsOrEmpty(f: Poly, v: Char): List<Val> = try {
         polyRoots(f, v) ?: emptyList()
     } catch (e: UnsupportedMath) {
         emptyList()
     }
 
-    /** Roots of a polynomial of degree ≤ 2 in [v] (null: none real, or too hard). */
-    private fun polyRoots(f: Poly, v: Char): List<Surd>? {
+    /** Real roots of a polynomial in [v], silently (null: it has more than one unknown). */
+    internal fun polyRoots(f: Poly, v: Char): List<Val>? {
         val deg = f.degreeIn(v)
         if (f.variables.any { it != v }) return null
         val c = (0..deg).map { f.coeffOf(v, it).constant }
         return when (deg) {
             0 -> emptyList()
-            1 -> listOf(-c[0] / c[1])
-            2 -> quadratic(c[2], c[1], c[0])
-            else -> if (f.monomialGcd().let { it.exp(v) } == deg) listOf(Surd.ZERO) else null
+            1 -> listOf(Val.of(-c[0] / c[1]))
+            2 -> quadratic(c[2], c[1], c[0])?.map { Val.of(it) }
+            else -> RootFinder(this).silent(f, v)
         }
     }
 
@@ -274,7 +315,7 @@ private class SolveSession(private val target: Char?) {
             deg == 0 -> { step("${Printer.surd(c[0])}=0", "That is never true"); Roots.None }
             deg == 1 -> linear(a, b, c[1], c[0], v)
             deg == 2 -> quadraticSteps(a, b, p, c[2], c[1], c[0], v)
-            else -> higher(p, v, deg)
+            else -> RootFinder(this).solve(p, v)
         }
     }
 
@@ -286,29 +327,30 @@ private class SolveSession(private val target: Char?) {
         val rhs = -c0
         if (!already) step("${vTerm(k, v)}=${Printer.surd(rhs)}", "Combine and move terms")
         val x = rhs / k
-        if (k != Surd.ONE) step("$v=${Printer.surd(x)}", "Divide both sides by ${Printer.surd(k)}")
+        val rightAlone = isSingleMono(b, Mono.of(v)) && a.isConstant && b.terms.values.first() == Surd.ONE
+        if (k != Surd.ONE && !(already && rightAlone)) step("$v=${Printer.surd(x)}", "Divide both sides by ${Printer.surd(k)}")
         else if (!already) { /* already isolated */ }
-        return Roots.Some(listOf(x))
+        return Roots.Some(listOf(Val.of(x)))
     }
 
-    private fun quadraticSteps(a: Poly, b: Poly, p: Poly, qa: Surd, qb: Surd, qc: Surd, v: Char): Roots {
+    internal fun quadraticSteps(a: Poly, b: Poly, p: Poly, qa: Surd, qb: Surd, qc: Surd, v: Char): Roots {
         if (qb.isZero) {
             val already = (isSingleMono(a, Mono.of(v, 2)) && b.isConstant) || (isSingleMono(b, Mono.of(v, 2)) && a.isConstant)
             if (!already) step("${vTerm(qa, v, 2)}=${Printer.surd(-qc)}", "Move terms")
             val k = -qc / qa
             if (qa != Surd.ONE) step("$v^{2}=${Printer.surd(k)}", "Divide both sides by ${Printer.surd(qa)}")
             if (k.signum() < 0) { step("$v^{2}<0", "A square is never negative: no real solution"); return Roots.None }
-            if (k.isZero) return Roots.Some(listOf(Surd.ZERO))
+            if (k.isZero) return Roots.Some(listOf(Val.of(Surd.ZERO)))
             val root = k.sqrt()
             val plain = "\\sqrt{${Printer.surd(k)}}"
             step("$v=\\pm$plain", "Take the square root (±)")
             if (Printer.surd(root) != plain) step("$v=\\pm ${Printer.surd(root)}", "Simplify")
-            return Roots.Some(listOf(-root, root))
+            return Roots.Some(listOf(Val.of(-root), Val.of(root)))
         }
         step("${Printer.poly(p)}=0", "Move everything to one side")
         if (qc.isZero) {
             step("$v(${Printer.poly(Poly.of(Mono.of(v), qa) + Poly.const(qb))})=0", "Factor out $v")
-            return Roots.Some(listOf(Surd.ZERO, -qb / qa).sortedBy { it.toDouble() })
+            return Roots.Some(listOf(Surd.ZERO, -qb / qa).sortedBy { it.toDouble() }.map { Val.of(it) })
         }
         val d = qb * qb - Surd.of(4) * qa * qc
         step("D=b^{2}-4ac=${Printer.surd(d)}", "Discriminant")
@@ -317,28 +359,18 @@ private class SolveSession(private val target: Char?) {
         if (d.isZero) {
             val r = -qb / two
             step("$v=${Printer.surd(r)}", "D = 0: one solution")
-            return Roots.Some(listOf(r))
+            return Roots.Some(listOf(Val.of(r)))
         }
         val s = d.sqrt()
         val rational = d.isRational && s.isRational
         step("$v=\\frac{${Printer.surd(-qb)}\\pm\\sqrt{${Printer.surd(d)}}}{${Printer.surd(two)}}", if (rational) "Quadratic formula (D is a perfect square)" else "Quadratic formula")
         val roots = listOf((-qb - s) / two, (-qb + s) / two).sortedBy { it.toDouble() }
         step(roots.joinToString("\\ \\text{or}\\ ") { "$v=${Printer.surd(it)}" }, "Solutions")
-        return Roots.Some(roots)
+        return Roots.Some(roots.map { Val.of(it) })
     }
 
-    private fun higher(p: Poly, v: Char, deg: Int): Roots {
-        val m = p.monomialGcd().exp(v)
-        if (m > 0 && deg - m <= 2) {
-            val q = p.divMono(Mono.of(v, m))
-            step("$v^{$m}(${Printer.poly(q)})=0", "Factor out $v^{$m}")
-            val rest = if (q.degreeIn(v) == 0) emptyList() else polyRoots(q, v) ?: emptyList()
-            return Roots.Some((listOf(Surd.ZERO) + rest).distinct().sortedBy { it.toDouble() })
-        }
-        throw UnsupportedMath("equations of degree $deg")
-    }
-
-    private fun check(l: RatFn, r: RatFn, v: Char, roots: List<Surd>) {
+    private fun check(l: RatFn, r: RatFn, v: Char, vals: List<Val>) {
+        val roots = vals.mapNotNull { it.exact }
         val shown = if (roots.size == 2 && roots[0] == -roots[1]) listOf(roots[1]) else roots
         for (x in shown) {
             val lv = l.substitute(v, x).simplified().value
@@ -388,40 +420,82 @@ private class SolveSession(private val target: Char?) {
 
     // ------------------------------------------------------------------ answers
 
-    private fun valueAnswer(v: Char?, x: Surd): Answer {
-        val d = Printer.decimal(x)
-        val exact = Printer.surd(x)
+    internal fun valueAnswer(v: Char?, x: Val): Answer {
         val lhs = if (v != null) "$v=" else ""
-        val tail = d?.let { (if (it.exact) "=" else "\\approx") + it.text } ?: ""
-        val tex = lhs + exact + tail
+        val tex = when {
+            x.exact != null -> {
+                val d = Printer.decimal(x.exact)
+                lhs + Printer.surd(x.exact) + (d?.let { (if (it.exact) "=" else "\\approx") + it.text } ?: "")
+            }
+            x.tex != null -> lhs + x.tex + "\\approx" + Printer.num(x.d, 3)
+            else -> (if (v != null) "$v" else "") + "\\approx" + Printer.num(x.d, 4)
+        } + RootFinder.multTex(x.mult)
         return Answer(tex, plainOf(tex))
     }
 
-    private fun rootsAnswer(v: Char, roots: List<Surd>): Answer {
-        val sym = roots.size == 2 && roots[0] == -roots[1]
-        val tex = if (sym) {
-            val pos = roots.maxByOrNull { it.toDouble() }!!
-            val d = Printer.decimal(pos)
-            "$v=\\pm ${Printer.surd(pos)}" + (d?.let { (if (it.exact) "=" else "\\approx") + "\\pm" + it.text } ?: "")
-        } else roots.joinToString("\\ \\text{or}\\ ") { valueAnswer(v, it).latex }
+    private fun pmTex(v: Char, pos: Val): String = when {
+        pos.exact != null -> {
+            val d = Printer.decimal(pos.exact)
+            "$v=\\pm ${Printer.surd(pos.exact)}" + (d?.let { (if (it.exact) "=" else "\\approx") + "\\pm" + it.text } ?: "")
+        }
+        pos.tex != null -> "$v=\\pm ${pos.tex}\\approx\\pm${Printer.num(pos.d, 3)}"
+        else -> "$v\\approx\\pm${Printer.num(pos.d, 4)}"
+    } + RootFinder.multTex(pos.mult)
+
+    internal fun rootsAnswer(v: Char, roots: List<Val>): Answer {
+        // pair x and -x into ±x
+        val used = BooleanArray(roots.size)
+        val groups = ArrayList<Pair<Val, Boolean>>()
+        for (i in roots.indices) {
+            if (used[i]) continue
+            val r = roots[i]
+            val j = roots.indices.firstOrNull { it != i && !used[it] && roots[it].d > 0 && r.d < 0 && Math.abs(roots[it].d + r.d) <= 1e-12 * Math.max(1.0, Math.abs(r.d)) && roots[it].mult == r.mult && roots[it].isExact == r.isExact }
+            if (j != null) { used[i] = true; used[j] = true; groups += roots[j] to true } else { used[i] = true; groups += r to false }
+        }
+        val anyPair = groups.any { it.second }
+        val ordered = if (anyPair) groups.sortedBy { Math.abs(it.first.d) } else groups
+        val tex = ordered.joinToString("\\ \\text{or}\\ ") { (r, pm) -> if (pm) pmTex(v, r) else valueAnswer(v, r).latex }
         return Answer(tex, plainOf(tex))
     }
 }
 
 /** Converts the small LaTeX subset the solver prints into plain text for the clipboard. */
 fun plainOf(latex: String): String {
-    var s = latex
+    var s = latex.replace("\\pi", "π")
     val frac = Regex("""\\frac\{([^{}]*)\}\{([^{}]*)\}""")
-    while (frac.containsMatchIn(s)) s = frac.replace(s) { m ->
-        fun wrap(t: String) = if (t.all { it.isLetterOrDigit() || it == '.' }) t else "($t)"
-        wrap(m.groupValues[1]) + "/" + wrap(m.groupValues[2])
-    }
-    s = Regex("""\\sqrt\{([^{}]*)\}""").replace(s) { "√" + it.groupValues[1] }
+    val sqrtN = Regex("""\\sqrt\[(\d+)\]\{([^{}]*)\}""")
+    val sqrt = Regex("""\\sqrt\{([^{}]*)\}""")
+    val pow = Regex("""\^\{(\d+)\}""")
+    // innermost first, so nested roots and fractions inside roots work
+    do {
+        val before = s
+        s = frac.replace(s) { m ->
+            fun wrap(t: String) = if (t.all { it.isLetterOrDigit() || it == '.' || it == '√' || it == 'π' || it in "⁰¹²³⁴⁵⁶⁷⁸⁹" }) t else "($t)"
+            wrap(m.groupValues[1]) + "/" + wrap(m.groupValues[2])
+        }
+        s = sqrtN.replace(s) {
+            val n = it.groupValues[1]
+            (if (n == "3") "∛" else n.map { c -> "⁰¹²³⁴⁵⁶⁷⁸⁹"[c - '0'] }.joinToString("") + "√") + it.groupValues[2]
+        }
+        s = sqrt.replace(s) {
+            val inner = it.groupValues[1]
+            "√" + if (inner.all { c -> c.isLetterOrDigit() || c == '.' || c == 'π' }) inner else "($inner)"
+        }
+        s = pow.replace(s) { it.groupValues[1].map { c -> "⁰¹²³⁴⁵⁶⁷⁸⁹"[c - '0'] }.joinToString("") }
+    } while (s != before)
+    s = Regex("""\\log_\{([^{}]*)\}""").replace(s) { "log_" + it.groupValues[1] }
     s = s.replace("\\approx", "≈").replace("\\pm", "±").replace("\\cdot", "·")
         .replace("\\ \\text{or}\\ ", " or ").replace("\\text{", "").replace("\\ ", " ").replace("\\,", " ")
+        .replace("\\pi", "π").replace("\\infty", "∞").replace("\\cup", "∪").replace("\\in", "∈").replace("\\cap", "∩")
+        .replace("\\varnothing", "∅").replace("\\emptyset", "∅").replace("\\mathbb{R}", "ℝ")
+        .replace("\\ne", "≠").replace("\\Rightarrow", "⇒").replace("\\times", "×")
+    s = Regex("""\\le(?![a-z])""").replace(s, "≤")
+    s = Regex("""\\ge(?![a-z])""").replace(s, "≥")
+    s = s.replace("\\ln", "ln").replace("\\log", "log")
     s = s.replace("± ", "±")
-    s = Regex("(?<=[\\w√)])([+-])(?=[\\w√(])").replace(s) { " ${it.value} " }
-    s = Regex("""\^\{(\d+)\}""").replace(s) { it.groupValues[1].map { c -> "⁰¹²³⁴⁵⁶⁷⁸⁹"[c - '0'] }.joinToString("") }
+    s = Regex("(?<=[\\w√π)∞])([+-])(?=[\\w√π(∞])").replace(s) { " ${it.value} " }
     s = s.replace("{", "").replace("}", "").replace("=", " = ").replace("≈", " ≈ ")
-    return s.replace(Regex("\\s+"), " ").trim()
+    s = s.replace("≤", " ≤ ").replace("≥", " ≥ ").replace("∈", " ∈ ").replace("<", " < ").replace(">", " > ")
+    s = s.replace("∪", " ∪ ").replace(",", ", ").replace("≠", " ≠ ")
+    return s.replace(Regex("\\s+"), " ").replace(" ,", ",").trim()
 }

@@ -247,6 +247,17 @@ class ScreenshotTest {
         }
     }
 
+    /** 0.4.0: an inequality solved with a sign chart, and a logarithm equation where one candidate is rejected in its Check step. */
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveInequalityTabletLight() =
+        shot("24-solve-inequality-tablet-light", false, floatingScene("inequality-light", minimized = false, input = "\\frac{x-1}{x+2}\\ge 0"))
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveLogRejectedRootTabletLight() =
+        shot("25-solve-log-rejected-tablet-light", false, floatingScene("log-light", minimized = false, input = "\\log x+\\log(x-3)=1"))
+
     /** KaTeX pre-rendered by headless Chrome from the same page and JSON the card's WebView gets (Robolectric cannot draw a WebView). */
     private fun withKatex(fixture: String, content: @Composable () -> Unit): @Composable () -> Unit = {
         val png = remember(fixture) { BitmapFactory.decodeStream(javaClass.getResourceAsStream("/katex/$fixture.png")!!).asImageBitmap() }
@@ -288,11 +299,11 @@ class ScreenshotTest {
     }
 
     /** What the user sees after the lasso: the live page, un-dimmed, with the card window on top of it. */
-    private fun floatingScene(fixture: String, minimized: Boolean): @Composable () -> Unit = withKatex(fixture) {
+    private fun floatingScene(fixture: String, minimized: Boolean, input: String = "2x^{2}+144=400"): @Composable () -> Unit = withKatex(fixture) {
         val floating = remember {
             FloatingState().apply {
                 anchor = circleAnchor
-                val r = SolvePipeline.run("2x^{2}+144=400", DotMeaning.Multiply)
+                val r = SolvePipeline.run(input, DotMeaning.Multiply)
                 val t = SolveTimings.format(
                     mapOf(
                         Stage.CaptureRequested to 1000L, Stage.BitmapReady to 1180L, Stage.LassoDone to 3000L, Stage.SessionReady to 1500L,
@@ -300,7 +311,7 @@ class ScreenshotTest {
                     ),
                     tokens = 14,
                 )
-                card = CardUi(latex = "2x^{2}+144=400", reading = false, result = r, stepsOpen = !minimized, minimized = minimized, timings = t)
+                card = CardUi(latex = input, reading = false, result = r, stepsOpen = !minimized, minimized = minimized, timings = t)
             }
         }
         Box(Modifier.fillMaxSize()) {

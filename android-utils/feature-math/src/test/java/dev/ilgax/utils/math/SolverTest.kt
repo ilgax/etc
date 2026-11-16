@@ -83,7 +83,7 @@ class SolverTest {
 
     // ---- failures are messages, not crashes ----
     @Test fun unsupportedSymbol() = failed("\\sin x=1")
-    @Test fun cubic() = failed("x^3+x+1=0")
+    @Test fun trigIsUnsupported() = failed("\\cos x=0")
     @Test fun twoUnknownsOneEquation() = failed("x+y=3")
     @Test fun garbage() = failed("))((")
     @Test fun emptyRhs() = failed("x=")

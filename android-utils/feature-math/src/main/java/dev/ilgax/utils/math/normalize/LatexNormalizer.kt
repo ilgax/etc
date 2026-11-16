@@ -15,7 +15,8 @@ object LatexNormalizer {
     private val spacing = Regex("""(?<!\\)\\[,;:! ]|~""")
     private val wrappers = Regex("""(?<!\\)\\[\[\]()]""")
     private val envs = Regex("""\\(?:begin|end)\{(?:array|aligned|align\*?|gathered|gather\*?|matrix|split|cases|eqnarray\*?|equation\*?)\}(?:\{[lcr| ]*\})?""")
-    private val textLike = Regex("""\\(?:mathrm|mathit|mathbf|text|textrm|operatorname)\s*\{([^{}]*)\}""")
+    private val textLike = Regex("""\\(mathrm|mathit|mathbf|text|textrm|operatorname)\s*\{([^{}]*)\}""")
+    private val bareFunctions = Regex("""(?<![A-Za-z\\])(ln|log|exp)(?![A-Za-z])""")
     private val digitDotDigit = Regex("""(?<=\d)\s*\.\s*(?=\d)""")
     private val targetLine = Regex("""^\s*([A-Za-z])\s*=\s*$""")
 
@@ -26,19 +27,30 @@ object LatexNormalizer {
         s = wrappers.replace(s, " ")
         s = droppedCommands.replace(s, " ")
         s = spacing.replace(s, " ")
-        s = textLike.replace(s) { it.groupValues[1] }
+        // \mathrm{e} is Euler's number whatever the other letters are; other wrappers are dropped
+        s = textLike.replace(s) {
+            val inner = it.groupValues[2]
+            if (inner.trim() == "e" && it.groupValues[1] in setOf("mathrm", "operatorname")) "\\mathrm{e}" else inner
+        }
+        s = bareFunctions.replace(s) { "\\" + it.groupValues[1] }
 
         s = s.replace(Regex("""\\[dt]frac(?![a-zA-Z])"""), "\\\\frac")
         s = s.replace(Regex("""\\ast(?![a-zA-Z])"""), "\\\\cdot").replace("*", "\\cdot ")
         s = s.replace("·", "\\cdot ").replace("⋅", "\\cdot ").replace("∙", "\\cdot ")
+        // division: \div, ÷ and the colon (`12 : 4`) all behave like `/`
         s = s.replace(Regex("""\\div(?![a-zA-Z])"""), "/").replace("÷", "/")
+        s = s.replace(Regex("""\\colon(?![a-zA-Z])"""), "/")
+        // relations
+        s = s.replace(Regex("""\\(?:leqslant|leq|le)(?![a-zA-Z])""")) { "\\le " }.replace("≤", "\\le ").replace("<=", "\\le ")
+        s = s.replace(Regex("""\\(?:geqslant|geq|ge)(?![a-zA-Z])""")) { "\\ge " }.replace("≥", "\\ge ").replace(">=", "\\ge ")
+        s = s.replace(Regex("""\\lt(?![a-zA-Z])"""), "<").replace(Regex("""\\gt(?![a-zA-Z])"""), ">")
         s = s.replace("−", "-").replace("–", "-")
         val times = if (timesIsVariable) " x " else "\\cdot "
         s = s.replace(Regex("""\\times(?![a-zA-Z])""")) { times }.replace("×", times)
         if (dot == DotMeaning.Multiply) s = digitDotDigit.replace(s, "\\\\cdot ")
 
         // lines: `\\` and newlines separate them
-        val lines = s.split("\\\\", "\n").map { it.trim().trimEnd('.', ',', ';').trim() }.filter { it.isNotEmpty() }.toMutableList()
+        val lines = s.split("\\\\", "\n").map { it.trim().trimEnd('.', ',', ';', ':').trim().replace(':', '/') }.filter { it.isNotEmpty() }.toMutableList()
         var target: Char? = null
         if (lines.size > 1) {
             targetLine.matchEntire(lines.last())?.let { target = it.groupValues[1][0]; lines.removeAt(lines.size - 1) }

@@ -12,26 +12,45 @@ sealed interface Node {
     data class Quotient(val num: Node, val den: Node) : Node
     data class Power(val base: Node, val exp: Node) : Node
     data class Root(val index: Int, val arg: Node) : Node
+    /** π or Euler's e. */
+    data class Const(val symbol: Char) : Node
+    /** "ln" (base e, [base] null) or "log" with an explicit base. */
+    data class Func(val name: String, val base: Node?, val arg: Node) : Node
 }
 
-/** One line of input: expressions joined by `=` (a chain a=b=c has three parts). */
-class ParsedLine(val parts: List<Node>, val sources: List<String>)
+/**
+ * One line of input: expressions joined by `=` (a chain a=b=c has three parts) or by relations. [ops] holds one
+ * entry per gap, each one of "=", "<", ">", "<=", ">=".
+ */
+class ParsedLine(val parts: List<Node>, val sources: List<String>, val ops: List<String> = List(parts.size - 1) { "=" }) {
+    val isEquation get() = ops.isNotEmpty() && ops.all { it == "=" }
+    val isInequality get() = ops.any { it != "=" }
+}
 
 private enum class T { NUM, ID, OP, CMD, BREAK, END }
 private class Tok(val type: T, val text: String, val start: Int, val end: Int)
 
 object LatexParser {
+    private val relations = mapOf(
+        "\\le" to "<=", "\\leq" to "<=", "\\leqslant" to "<=", "\\ge" to ">=", "\\geq" to ">=", "\\geqslant" to ">=",
+        "\\lt" to "<", "\\gt" to ">",
+    )
+    private val trig = setOf("\\sin", "\\cos", "\\tan", "\\cot", "\\sec", "\\csc", "\\arcsin", "\\arccos", "\\arctan", "\\sinh", "\\cosh", "\\tanh")
     private val skipCommands = setOf("\\,", "\\;", "\\!", "\\:", "\\ ", "\\quad", "\\qquad", "\\left", "\\right", "\\displaystyle", "\\textstyle", "\\big", "\\Big")
 
     /** Splits [input] into lines (by `\\` or newline) and each line into `=`-separated parts. */
-    fun parse(input: String): List<ParsedLine> {
+    fun parse(input: String, target: Char? = null): List<ParsedLine> {
         val toks = tokenize(input)
+        val letters = toks.filter { it.type == T.ID }.map { it.text[0] }.toSet()
+        // `e` is Euler's number, except when it is the only letter of an equation or the unknown asked for (target line)
+        val hasRelation = toks.any { relationOf(it) != null }
+        val eConst = 'e' in letters && (letters.size > 1 || !hasRelation) && target != 'e'
         val lines = ArrayList<ParsedLine>()
         var from = 0
         for (i in 0..toks.size) {
             if (i == toks.size || toks[i].type == T.BREAK) {
                 val slice = toks.subList(from, i)
-                if (slice.isNotEmpty()) lines += parseLine(input, slice)
+                if (slice.isNotEmpty()) lines += parseLine(input, slice, eConst)
                 from = i + 1
             }
         }
@@ -39,23 +58,31 @@ object LatexParser {
         return lines
     }
 
-    private fun parseLine(input: String, slice: List<Tok>): ParsedLine {
+    private fun relationOf(t: Tok): String? = when {
+        t.type == T.OP && (t.text == "=" || t.text == "<" || t.text == ">") -> t.text
+        t.type == T.CMD -> relations[t.text]
+        else -> null
+    }
+
+    private fun parseLine(input: String, slice: List<Tok>, eConst: Boolean): ParsedLine {
         val parts = ArrayList<List<Tok>>()
+        val ops = ArrayList<String>()
         var depth = 0
         var cur = ArrayList<Tok>()
         for (t in slice) {
             if (t.type == T.OP) {
                 if (t.text == "{" || t.text == "(" || t.text == "[") depth++
                 if (t.text == "}" || t.text == ")" || t.text == "]") depth--
-                if (t.text == "=" && depth == 0) { parts += cur; cur = ArrayList(); continue }
             }
+            val rel = if (depth == 0) relationOf(t) else null
+            if (rel != null) { parts += cur; ops += rel; cur = ArrayList(); continue }
             cur += t
         }
         parts += cur
-        if (parts.any { it.isEmpty() }) throw UnsupportedMath("an equation is missing one side")
-        val nodes = parts.map { p -> Parser(p).parseAll() }
+        if (parts.any { it.isEmpty() }) throw UnsupportedMath(if (ops.all { it == "=" }) "an equation is missing one side" else "an inequality is missing one side")
+        val nodes = parts.map { p -> Parser(p, eConst).parseAll() }
         val sources = parts.map { p -> input.substring(p.first().start, p.last().end).trim() }
-        return ParsedLine(nodes, sources)
+        return ParsedLine(nodes, sources, ops)
     }
 
     private fun tokenize(s: String): List<Tok> {
@@ -82,7 +109,10 @@ object LatexParser {
                         var j = i + 1
                         while (j < s.length && s[j].isLetter()) j++
                         val name = s.substring(i, j)
-                        if (name !in skipCommands) out += Tok(T.CMD, name, i, j)
+                        if ((name == "\\mathrm" || name == "\\operatorname") && s.startsWith("{e}", j)) {
+                            out += Tok(T.CMD, "\\eulere", i, j + 3); j += 3
+                        } else if (name == "\\colon") out += Tok(T.OP, "/", i, j)
+                        else if (name !in skipCommands) out += Tok(T.CMD, name, i, j)
                         i = j
                     } else if (i + 1 < s.length) {
                         val name = s.substring(i, i + 2)
@@ -91,7 +121,11 @@ object LatexParser {
                         else { out += Tok(T.CMD, name, i, i + 2); i += 2 }
                     } else i++
                 }
-                c in "+-*/^=(){}[]" -> { out += Tok(T.OP, c.toString(), i, i + 1); i++ }
+                c in "+-*/^=(){}[]_<>" -> { out += Tok(T.OP, c.toString(), i, i + 1); i++ }
+                c == ':' -> { out += Tok(T.OP, "/", i, i + 1); i++ }
+                c == 'π' -> { out += Tok(T.CMD, "\\pi", i, i + 1); i++ }
+                c == '≤' -> { out += Tok(T.CMD, "\\le", i, i + 1); i++ }
+                c == '≥' -> { out += Tok(T.CMD, "\\ge", i, i + 1); i++ }
                 c == '−' -> { out += Tok(T.OP, "-", i, i + 1); i++ }
                 c == '·' || c == '⋅' -> { out += Tok(T.CMD, "\\cdot", i, i + 1); i++ }
                 c == '×' -> { out += Tok(T.CMD, "\\times", i, i + 1); i++ }
@@ -102,7 +136,7 @@ object LatexParser {
         return out
     }
 
-    private class Parser(tokens: List<Tok>) {
+    private class Parser(tokens: List<Tok>, private val eConst: Boolean) {
         private val toks = ArrayList(tokens)
         private var pos = 0
 
@@ -152,7 +186,7 @@ object LatexParser {
         private fun startsAtom(t: Tok) = when (t.type) {
             T.NUM, T.ID -> true
             T.OP -> t.text == "(" || t.text == "{" || t.text == "["
-            T.CMD -> t.text in setOf("\\frac", "\\dfrac", "\\tfrac", "\\sqrt")
+            T.CMD -> t.text in setOf("\\frac", "\\dfrac", "\\tfrac", "\\sqrt", "\\pi", "\\eulere", "\\ln", "\\lg", "\\log", "\\exp")
             else -> false
         }
 
@@ -185,6 +219,23 @@ object LatexParser {
             return atom()
         }
 
+        /** Argument of ln/log/exp: a parenthesised group, or the next power-level factor (`\\ln x^2` is ln(x²)). */
+        private fun funcArg(): Node {
+            val t = peek() ?: throw UnsupportedMath("a function without an argument")
+            return if (isOp(t, "(") || isOp(t, "{") || isOp(t, "[")) atom() else power()
+        }
+
+        /** The base after `\\log_`: a braced group or one digit/letter/constant. */
+        private fun subscript(): Node {
+            val t = peek() ?: throw UnsupportedMath("a missing subscript")
+            if (isOp(t, "{")) return group()
+            if (t.type == T.NUM && t.text.length > 1 && !t.text.contains('.')) {
+                toks[pos] = Tok(T.NUM, t.text.substring(1), t.start + 1, t.end)
+                return Node.Number(Rational.parse(t.text.substring(0, 1)))
+            }
+            return atom()
+        }
+
         private fun group(): Node {
             if (!isOp(peek(), "{")) throw UnsupportedMath("a missing group")
             pos++
@@ -199,7 +250,16 @@ object LatexParser {
             pos++
             return when {
                 t.type == T.NUM -> Node.Number(Rational.parse(t.text))
-                t.type == T.ID -> Node.Variable(t.text[0])
+                t.type == T.ID -> if (t.text[0] == 'e' && eConst) Node.Const('e') else Node.Variable(t.text[0])
+                isCmd(t, "\\pi") -> Node.Const('π')
+                isCmd(t, "\\eulere") -> Node.Const('e')
+                isCmd(t, "\\ln") -> Node.Func("ln", null, funcArg())
+                isCmd(t, "\\lg") -> Node.Func("log", Node.Number(Rational.of(10)), funcArg())
+                isCmd(t, "\\log") -> {
+                    val base = if (isOp(peek(), "_")) { pos++; subscript() } else Node.Number(Rational.of(10))
+                    Node.Func("log", base, funcArg())
+                }
+                isCmd(t, "\\exp") -> Node.Power(Node.Const('e'), funcArg())
                 isOp(t, "(") -> { val n = expr(); if (!isOp(peek(), ")")) throw UnsupportedMath("an unclosed parenthesis"); pos++; n }
                 isOp(t, "{") -> { pos--; group() }
                 isOp(t, "[") -> { val n = expr(); if (!isOp(peek(), "]")) throw UnsupportedMath("an unclosed bracket"); pos++; n }
@@ -217,6 +277,7 @@ object LatexParser {
                     }
                     Node.Root(index, if (isOp(peek(), "{")) group() else atom())
                 }
+                t.type == T.CMD && t.text in trig -> throw UnsupportedMath("trigonometric functions")
                 t.type == T.CMD -> throw UnsupportedMath("the symbol ${t.text}")
                 else -> throw UnsupportedMath("unexpected “${t.text}”")
             }
@@ -224,11 +285,12 @@ object LatexParser {
     }
 }
 
-/** Evaluates a [Node] to an exact rational function. */
-object Evaluator {
+/** Evaluates a [Node] to an exact rational function; roots, exponentials and logs of the unknown become atoms. */
+internal class Evaluator(val atoms: AtomTable = AtomTable()) {
     fun eval(n: Node): RatFn = when (n) {
         is Node.Number -> const(Surd.of(n.value))
         is Node.Variable -> RatFn(Poly.variable(n.name), Poly.ONE)
+        is Node.Const -> const(if (n.symbol == 'π') Surd.PI_SURD else Surd.E_SURD)
         is Node.Neg -> -eval(n.arg)
         is Node.Sum -> n.terms.map { eval(it) }.reduce { a, b -> a + b }
         is Node.Product -> n.factors.map { eval(it) }.reduce { a, b -> a * b }
@@ -238,39 +300,75 @@ object Evaluator {
             if (d.num.isConstant && !d.num.constant.isSingleTerm) throw UnsupportedMath("dividing by a sum of square roots")
             eval(n.num) / d
         }
-        is Node.Power -> power(eval(n.base), n.exp)
-        is Node.Root -> root(n.index, eval(n.arg))
+        is Node.Power -> power(n)
+        is Node.Root -> root(n)
+        is Node.Func -> func(n)
     }
 
     private fun const(s: Surd) = RatFn(Poly.const(s), Poly.ONE)
+    private fun sym(a: Atom) = RatFn(Poly.variable(a.sym), Poly.ONE)
 
-    private fun power(base: RatFn, exp: Node): RatFn {
-        val e = eval(exp)
-        val ev = (if (e.num.isConstant && e.den.isConstant) e.num.constant / e.den.constant else null)
-        val r = ev?.takeIf { it.isRational }?.rational ?: throw UnsupportedMath("a variable exponent")
-        if (!r.isInteger) throw UnsupportedMath("a fractional exponent (use \\sqrt)")
-        val n = r.num.toInt()
-        if (kotlin.math.abs(n) > 64) throw UnsupportedMath("a very large exponent")
-        return base.pow(n)
+    /** The exact value of an expression without unknowns, else null. */
+    fun constantOf(f: RatFn): Surd? = if (f.variables.isEmpty()) f.num.constant / f.den.constant else null
+
+    private fun power(n: Node.Power): RatFn {
+        val base = eval(n.base)
+        val e = eval(n.exp)
+        if (e.variables.isEmpty()) {
+            val ev = e.num.constant / e.den.constant
+            val r = ev.takeIf { it.isRational }?.rational ?: throw UnsupportedMath("an irrational exponent")
+            if (!r.isInteger) throw UnsupportedMath("a fractional exponent (use \\sqrt)")
+            val k = r.num.toInt()
+            if (kotlin.math.abs(k) > 64) throw UnsupportedMath("a very large exponent")
+            return base.pow(k)
+        }
+        if (base.variables.isNotEmpty()) throw UnsupportedMath("a variable in both the base and the exponent (like x^x)")
+        if (e.variables.atomSyms.isNotEmpty()) throw UnsupportedMath("an exponent that contains a root, a logarithm or another power of the unknown")
+        val b = constantOf(base)!!
+        if (b.signum() <= 0) throw UnsupportedMath("a power with a base that is not positive and an unknown exponent")
+        if (b == Surd.ONE) return const(Surd.ONE)
+        return sym(atoms.pow(b, e, NodeTex.tex(n)))
     }
 
-    private fun root(index: Int, a: RatFn): RatFn {
-        if (!a.num.isConstant || !a.den.isConstant) throw UnsupportedMath("a square root of an expression with variables")
-        val value = a.num.constant / a.den.constant
-        if (value.signum() < 0) throw UnsupportedMath("the root of a negative number")
+    private fun root(n: Node.Root): RatFn {
+        val a = eval(n.arg)
+        if (a.variables.isEmpty()) {
+            val value = constantOf(a)!!
+            if (value.signum() < 0) {
+                if (n.index % 2 == 0) throw UnsupportedMath("the root of a negative number")
+                return -constRoot(n.index, -value)
+            }
+            return constRoot(n.index, value)
+        }
+        if (a.variables.atomSyms.isNotEmpty()) {
+            val inner = a.variables.atomSyms.mapNotNull { atoms[it] }
+            throw UnsupportedMath(if (inner.any { it is Atom.Rad }) "a root inside a root (nested radicals)" else "a root of a logarithm or of a power of the unknown")
+        }
+        if (!a.den.isConstant) throw NeedsNumeric("a root of a fraction with an unknown")
+        return sym(atoms.rad(n.index, a.num.divBy(a.den.constant), NodeTex.tex(n)))
+    }
+
+    private fun constRoot(index: Int, value: Surd): RatFn {
         if (index == 2) return const(value.sqrt())
         if (!value.isRational) throw UnsupportedMath("a higher root of a surd")
-        val q = value.rational
-        val n = exactRoot(q.num, index)
-        val d = exactRoot(q.den, index)
-        if (n == null || d == null) throw UnsupportedMath("a root that is not exact")
-        return const(Surd.of(Rational.of(n, d)))
+        val q = NumberTheory.exactRoot(value.rational, index) ?: throw UnsupportedMath("a root that is not exact")
+        return const(Surd.of(q))
     }
 
-    private fun exactRoot(v: BigInteger, k: Int): BigInteger? {
-        if (v.signum() == 0) return BigInteger.ZERO
-        var r = BigInteger.valueOf(Math.round(Math.pow(v.toDouble(), 1.0 / k)))
-        for (c in listOf(r - BigInteger.ONE, r, r + BigInteger.ONE)) if (c.signum() >= 0 && c.pow(k) == v) return c
-        return null
+    private fun func(n: Node.Func): RatFn {
+        val a = eval(n.arg)
+        val base = if (n.name == "ln") Surd.E_SURD else {
+            val b = eval(n.base!!)
+            constantOf(b) ?: throw UnsupportedMath("a logarithm with an unknown base")
+        }
+        if (base.signum() <= 0 || base == Surd.ONE) throw UnsupportedMath("a logarithm whose base is not positive or is 1")
+        if (a.variables.isEmpty()) {
+            val value = constantOf(a)!!
+            if (value.signum() <= 0) throw UnsupportedMath("the logarithm of a number that is not positive")
+            NumberTheory.exactLog(base, value)?.let { return const(Surd.of(it)) }
+        } else if (a.variables.atomSyms.isNotEmpty()) {
+            throw UnsupportedMath("a logarithm of a root, of a power of the unknown or of another logarithm")
+        }
+        return sym(atoms.log(base, a, NodeTex.tex(n)))
     }
 }

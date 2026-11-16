@@ -5,17 +5,38 @@ import java.math.BigInteger
 import java.math.MathContext
 
 /** The solver cannot handle this input; the message is shown to the user. */
-class UnsupportedMath(message: String) : Exception(message)
+open class UnsupportedMath(message: String) : Exception(message)
+
+/** Unsupported in exact form, but a numeric search for the roots of one unknown may still work. */
+class NeedsNumeric(message: String) : UnsupportedMath(message)
 
 /**
- * Exact real number Σ qᵢ·√kᵢ with distinct squarefree integers kᵢ ≥ 1 (k = 1 is the rational part).
- * Canonical form (no zero terms) makes equality structural.
+ * One basis element √k·π^(pi/2)·e^(e/2) of a [Surd]: k is squarefree, the constant exponents are counted in
+ * halves so that √π and √e stay exact. (k=1, 0, 0) is the rational part.
  */
-class Surd private constructor(val terms: Map<BigInteger, Rational>) {
+data class SKey(val k: BigInteger, val pi: Int = 0, val e: Int = 0) : Comparable<SKey> {
+    val hasConstants get() = pi != 0 || e != 0
+    override fun compareTo(other: SKey): Int {
+        val c = k.compareTo(other.k)
+        if (c != 0) return c
+        if (pi != other.pi) return pi.compareTo(other.pi)
+        return e.compareTo(other.e)
+    }
+
+    companion object { val ONE = SKey(BigInteger.ONE) }
+}
+
+/**
+ * Exact real number Σ qᵢ·√kᵢ·π^aᵢ·e^bᵢ with distinct squarefree integers kᵢ ≥ 1 (k = 1, no constants is the
+ * rational part). Canonical form (no zero terms) makes equality structural.
+ */
+class Surd private constructor(val terms: Map<SKey, Rational>) {
     val isZero get() = terms.isEmpty()
-    val isRational get() = terms.isEmpty() || (terms.size == 1 && terms.containsKey(BigInteger.ONE))
-    val rational: Rational get() = terms[BigInteger.ONE] ?: Rational.ZERO
+    val isRational get() = terms.isEmpty() || (terms.size == 1 && terms.containsKey(SKey.ONE))
+    val rational: Rational get() = terms[SKey.ONE] ?: Rational.ZERO
     val isSingleTerm get() = terms.size == 1
+    /** True when π or e appears. */
+    val hasConstants get() = terms.keys.any { it.hasConstants }
 
     operator fun plus(o: Surd): Surd {
         val m = HashMap(terms)
@@ -27,12 +48,12 @@ class Surd private constructor(val terms: Map<BigInteger, Rational>) {
     operator fun minus(o: Surd) = this + (-o)
 
     operator fun times(o: Surd): Surd {
-        val m = HashMap<BigInteger, Rational>()
-        for ((k1, q1) in terms) for ((k2, q2) in o.terms) {
-            val g = k1.gcd(k2)
-            val k = k1.divide(g) * k2.divide(g)
+        val m = HashMap<SKey, Rational>()
+        for ((a, q1) in terms) for ((b, q2) in o.terms) {
+            val g = a.k.gcd(b.k)
+            val key = SKey(a.k.divide(g) * b.k.divide(g), a.pi + b.pi, a.e + b.e)
             val q = q1 * q2 * Rational.of(g)
-            m[k] = (m[k] ?: Rational.ZERO) + q
+            m[key] = (m[key] ?: Rational.ZERO) + q
         }
         return build(m)
     }
@@ -41,9 +62,9 @@ class Surd private constructor(val terms: Map<BigInteger, Rational>) {
     operator fun div(o: Surd): Surd {
         if (o.isZero) throw ArithmeticException("division by zero")
         if (!o.isSingleTerm) throw UnsupportedMath("dividing by a sum of square roots")
-        val (k, q) = o.terms.entries.first()
-        // 1/(q√k) = √k / (q·k)
-        val inv = Surd(mapOf(k to (Rational.ONE / (q * Rational.of(k)))))
+        val (key, q) = o.terms.entries.first()
+        // 1/(q√k·π^a·e^b) = √k·π^-a·e^-b / (q·k)
+        val inv = Surd(mapOf(SKey(key.k, -key.pi, -key.e) to (Rational.ONE / (q * Rational.of(key.k)))))
         return this * inv
     }
 
@@ -57,8 +78,10 @@ class Surd private constructor(val terms: Map<BigInteger, Rational>) {
 
     fun toBigDecimal(mc: MathContext = MathContext(40)): BigDecimal {
         var sum = BigDecimal.ZERO
-        for ((k, q) in terms) {
-            val root = if (k == BigInteger.ONE) BigDecimal.ONE else BigDecimal(k).sqrt(mc)
+        for ((key, q) in terms) {
+            var root = if (key.k == BigInteger.ONE) BigDecimal.ONE else BigDecimal(key.k).sqrt(mc)
+            if (key.pi != 0) root = root.multiply(halfPower(PI, key.pi, mc), mc)
+            if (key.e != 0) root = root.multiply(halfPower(E, key.e, mc), mc)
             sum += BigDecimal(q.num).multiply(root, mc).divide(BigDecimal(q.den), mc)
         }
         return sum
@@ -72,9 +95,12 @@ class Surd private constructor(val terms: Map<BigInteger, Rational>) {
         if (isZero) return ZERO
         if (isRational) return sqrtRational(rational)
         if (isSingleTerm) {
-            val (k, q) = terms.entries.first()
-            // √(q√k) is a fourth root: only exact in the perfect-square-times-... cases we skip
-            throw UnsupportedMath("the square root of ${q}√$k")
+            val (key, q) = terms.entries.first()
+            // √(q·π^a·e^b) is exact when the exponents are whole; √(q√k) would be a fourth root
+            if (key.k == BigInteger.ONE && key.pi % 2 == 0 && key.e % 2 == 0 && q.signum > 0) {
+                return sqrtRational(q) * Surd(mapOf(SKey(BigInteger.ONE, key.pi / 2, key.e / 2) to Rational.ONE))
+            }
+            throw UnsupportedMath("the square root of ${q}√${key.k}")
         }
         // (a + b√k)² candidates: try denesting a+b√k with rational parts only.
         denest()?.let { return it }
@@ -82,9 +108,10 @@ class Surd private constructor(val terms: Map<BigInteger, Rational>) {
     }
 
     private fun denest(): Surd? {
-        if (terms.size != 2 || !terms.containsKey(BigInteger.ONE)) return null
+        if (terms.size != 2 || !terms.containsKey(SKey.ONE) || hasConstants) return null
         val a = rational
-        val (k, b) = terms.entries.first { it.key != BigInteger.ONE }
+        val (key, b) = terms.entries.first { it.key != SKey.ONE }
+        val k = key.k
         // √(a + b√k) = √x + √y  with x + y = a, 4xy = b²k
         val disc = a * a - b * b * Rational.of(k)
         if (disc.signum < 0) return null
@@ -102,21 +129,38 @@ class Surd private constructor(val terms: Map<BigInteger, Rational>) {
 
     override fun equals(other: Any?) = other is Surd && terms == other.terms
     override fun hashCode() = terms.hashCode()
-    override fun toString() = if (isZero) "0" else terms.entries.sortedBy { it.key }.joinToString(" + ") { (k, q) -> if (k == BigInteger.ONE) "$q" else "$q√$k" }
+    override fun toString() = if (isZero) "0" else terms.entries.sortedBy { it.key }.joinToString(" + ") { (key, q) ->
+        if (key == SKey.ONE) "$q" else "$q√${key.k}" + (if (key.pi != 0) "π^${key.pi}/2" else "") + (if (key.e != 0) "e^${key.e}/2" else "")
+    }
 
     companion object {
         val ZERO = Surd(emptyMap())
         val ONE = of(Rational.ONE)
 
-        fun of(q: Rational): Surd = if (q.isZero) ZERO else Surd(mapOf(BigInteger.ONE to q))
+        fun of(q: Rational): Surd = if (q.isZero) ZERO else Surd(mapOf(SKey.ONE to q))
         fun of(n: Long) = of(Rational.of(n))
 
-        private fun build(m: Map<BigInteger, Rational>) = Surd(m.filterValues { !it.isZero })
+        private fun build(m: Map<SKey, Rational>) = Surd(m.filterValues { !it.isZero })
+
+        val PI = BigDecimal("3.14159265358979323846264338327950288419716939937510582097494459")
+        val E = BigDecimal("2.71828182845904523536028747135266249775724709369995957496696763")
+        /** π^(pi/2)·e^(e/2) with exponents in halves. */
+        fun constant(pi: Int, e: Int): Surd = Surd(mapOf(SKey(BigInteger.ONE, pi, e) to Rational.ONE))
+        val PI_SURD: Surd = Surd(mapOf(SKey(BigInteger.ONE, 2, 0) to Rational.ONE))
+        val E_SURD: Surd = Surd(mapOf(SKey(BigInteger.ONE, 0, 2) to Rational.ONE))
+
+        /** c^(n/2). */
+        private fun halfPower(c: BigDecimal, n: Int, mc: MathContext): BigDecimal {
+            val whole = Math.abs(n) / 2
+            var r = c.pow(whole, mc)
+            if (Math.abs(n) % 2 == 1) r = r.multiply(c.sqrt(mc), mc)
+            return if (n < 0) BigDecimal.ONE.divide(r, mc) else r
+        }
 
         /** q·√k with k reduced to squarefree. */
         fun root(k: BigInteger, q: Rational = Rational.ONE): Surd {
             val (outer, inner) = squareFree(k)
-            return build(mapOf(inner to q * Rational.of(outer)))
+            return build(mapOf(SKey(inner) to q * Rational.of(outer)))
         }
 
         fun sqrtRational(r: Rational): Surd {
