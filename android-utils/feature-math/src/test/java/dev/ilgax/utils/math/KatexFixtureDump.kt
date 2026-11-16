@@ -29,6 +29,9 @@ class KatexFixtureDump {
             // 0.5.0: a trigonometric equation (period solutions + general solution) and an absolute-value equation with cases
             "trig" to content("\\sin(2x)=\\frac{\\sqrt3}{2}", true),
             "abs" to content("|x-1|+|x+2|=5", true),
+            // 0.6.0: a derivative with its rule steps, and a function alone: f', critical points, sign chart of f', extrema
+            "derivative" to content("\\frac{d}{dx}\\left(x^{2}\\sin x\\right)", true),
+            "critical" to content("f(x)=x^{3}-3x\\\\f'(x)", false),
         )) {
             for ((theme, col) in listOf("light" to light, "dark" to dark)) {
                 File(dir, "$name-$theme.json").writeText(c.toJson(col.first, col.second, col.third))

@@ -19,6 +19,10 @@ object SolvePipeline {
         percentHints: List<PercentUse> = emptyList(),
     ): SolveResult {
         if (text.isBlank()) return SolveResult.Failed("there is nothing to solve")
+        // a derivative of a case-by-case function is out of scope; the normaliser would otherwise flatten the cases away
+        if (Regex("""\\begin\{cases\}""").containsMatchIn(text) && Regex("""prime|'|\\frac\{\s*(?:\\mathrm\{)?d""").containsMatchIn(text)) {
+            return SolveResult.Failed("it needs derivatives of piecewise functions, which isn't supported")
+        }
         val n = LatexNormalizer.normalize(text, dot)
         if (n.latex.isBlank()) return SolveResult.Failed("there is nothing to solve")
         val r = MathSolver.solve(n.latex, targetOverride ?: n.target, angles)

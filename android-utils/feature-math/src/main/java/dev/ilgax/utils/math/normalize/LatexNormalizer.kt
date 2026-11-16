@@ -36,9 +36,24 @@ object LatexNormalizer {
     private val percentPrefix = Regex("""\\?[%％]\s*(\d+(?:\.\d+)?)""")
     private val digitDotDigit = Regex("""(?<=\d)\s*\.\s*(?=\d)""")
     private val targetLine = Regex("""^\s*([A-Za-z])\s*=\s*$""")
+    /** `^{\prime}`, `^{\prime\prime}`, `^{'}`, `^'`: the exponent-style primes a model writes after f, y or `)`. */
+    private val bracedPrimes = Regex("""\^\s*\{\s*((?:\\prime(?![a-zA-Z])\s*|['’′]\s*)+)\}""")
+    private val barePrimes = Regex("""\^\s*(?:\\prime(?![a-zA-Z])|['’′])""")
+    private val primeCommand = Regex("""\\prime(?![a-zA-Z])""")
+    private val primeMark = Regex("""\\prime|['’′]""")
+    /** `\text{tangent at }`, `\text{tangent line at x=1}`: the words go, a point written inside them stays. */
+    private val tangentText = Regex("""\\(?:text|textrm|mathrm|mbox)\s*\{[^{}]*[Tt]angent[^{}]*\}""")
+    private val tangentPoint = Regex("""[A-Za-z](?:_\{?0\}?)?\s*=\s*[^{},;]+""")
 
     fun normalize(raw: String, dot: DotMeaning = DotMeaning.Multiply, timesIsVariable: Boolean = true): NormalizedInput {
         var s = raw.replace("$", "").replace("\r", "\n")
+        // derivative marks: every spelling of a prime becomes ', and \text{tangent at} loses its words
+        s = tangentText.replace(s) { m -> tangentPoint.find(m.value)?.value ?: " " }
+        s = bracedPrimes.replace(s) { m -> "'".repeat(primeMark.findAll(m.groupValues[1]).count()) }
+        s = barePrimes.replace(s, "'")
+        s = primeCommand.replace(s, "'")
+        s = s.replace("″", "''").replace("‴", "'''").replace("’", "'").replace("′", "'").replace("ʹ", "'")
+        s = Regex("""'\s+(?=')""").replace(s, "")
         s = envs.replace(s, " ")
         s = s.replace("&", " ")
         s = wrappers.replace(s, " ")

@@ -71,6 +71,7 @@ internal class SolveSession(private val target: Char?, private val angles: Angle
     }
 
     private fun runInner(latex: String): SolveResult {
+        if (DerivativeSolver.applies(latex)) DerivativeSolver(this, angles).solve(latex)?.let { return it }
         val lines = LatexParser.parse(latex, target, angles)
         val nodes = lines.flatMap { it.parts }
         val trigVar = nodes.any { it.hasTrigVar() }
@@ -489,7 +490,11 @@ fun plainOf(latex: String): String {
         val before = s
         s = frac.replace(s) { m ->
             fun wrap(t: String) = if (t.all { it.isLetterOrDigit() || it == '.' || it == '√' || it == 'π' || it in "⁰¹²³⁴⁵⁶⁷⁸⁹" }) t else "($t)"
-            wrap(m.groupValues[1]) + "/" + wrap(m.groupValues[2])
+            // 1/(2√x), not 1/2√x
+            val den = m.groupValues[2].let { d -> if (Regex("""\d[A-Za-zπ√]""").containsMatchIn(d)) "($d)" else wrap(d) }
+            val q = wrap(m.groupValues[1]) + "/" + den
+            // (π/180)cos x, not π/180cos x
+            if (Regex("""^(?:[A-Za-z0-9(]|\\(?:sin|cos|tan|cot|sec|csc|arc|ln|log|pi|sqrt|frac))""").containsMatchIn(s.substring(m.range.last + 1))) "($q)" else q
         }
         s = sqrtN.replace(s) {
             val n = it.groupValues[1]
@@ -501,6 +506,8 @@ fun plainOf(latex: String): String {
         }
         s = pow.replace(s) { it.groupValues[1].map { c -> "⁰¹²³⁴⁵⁶⁷⁸⁹"[c - '0'] }.joinToString("") }
     } while (s != before)
+    // 2^{x+1} is 2^(x+1), not 2^x+1; a single character needs no brackets
+    s = Regex("""\^\{([^{}]+)\}""").replace(s) { if (it.groupValues[1].length == 1) "^" + it.groupValues[1] else "^(" + it.groupValues[1] + ")" }
     s = Regex("""\\log_\{([^{}]*)\}""").replace(s) { "log_" + it.groupValues[1] }
     s = s.replace("\\approx", "≈").replace("\\pm", "±").replace("\\cdot", "·")
         .replace("\\ \\text{or}\\ ", " or ").replace("\\text{", "").replace("\\ ", " ").replace("\\,", " ")
@@ -509,8 +516,11 @@ fun plainOf(latex: String): String {
         .replace("\\ne", "≠").replace("\\Rightarrow", "⇒").replace("\\times", "×")
     s = Regex("""\\le(?![a-z])""").replace(s, "≤")
     s = Regex("""\\ge(?![a-z])""").replace(s, "≥")
-    s = s.replace("\\ln", "ln").replace("\\log", "log")
-    s = Regex("""\\(arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc)(?![a-z])""").replace(s) { it.groupValues[1] }
+    // a function name right after a letter or a bracket is a product: x·ln 3, not xln 3
+    s = Regex("""\\(arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc|ln|log)(?![a-z])""").replace(s) {
+        val prev = s.getOrNull(it.range.first - 1)
+        (if (prev != null && (prev.isLetter() || prev == ')' || prev == '}')) "·" else "") + it.groupValues[1]
+    }
     s = s.replace("± ", "±")
     s = Regex("(?<=[\\w√π)∞°])([+-])(?=[\\w√π(∞|])").replace(s) { " ${it.value} " }
     s = s.replace("{", "").replace("}", "").replace("=", " = ").replace("≈", " ≈ ").replace("\u0001", "{").replace("\u0002", "}")

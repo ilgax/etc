@@ -269,6 +269,18 @@ class ScreenshotTest {
     fun solveAbsoluteValueCasesTabletLight() =
         shot("27-solve-abs-cases-tablet-light", false, floatingScene("abs-light", minimized = false, input = "|x-1|+|x+2|=5"))
 
+    /** 0.6.0: a derivative with its named rules, and a function alone with critical points, the sign chart of f' and its extrema. */
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-land-hdpi")
+    fun solveDerivativeTabletLight() =
+        shot("28-solve-derivative-tablet-light", false, floatingScene("derivative-light", minimized = false, input = "\\frac{d}{dx}\\left(x^{2}\\sin x\\right)"))
+
+    /** A taller window than the others: this card has many steps and the sign chart is near the end. */
+    @Test
+    @Config(qualifiers = "w1280dp-h1250dp-hdpi")
+    fun solveCriticalPointsTabletLight() =
+        shot("29-solve-critical-points-tablet-light", false, floatingScene("critical-light", minimized = false, input = "f(x)=x^{3}-3x\\\\f'(x)", pageHeight = 1875))
+
     /** KaTeX pre-rendered by headless Chrome from the same page and JSON the card's WebView gets (Robolectric cannot draw a WebView). */
     private fun withKatex(fixture: String, content: @Composable () -> Unit): @Composable () -> Unit = {
         val png = remember(fixture) { BitmapFactory.decodeStream(javaClass.getResourceAsStream("/katex/$fixture.png")!!).asImageBitmap() }
@@ -279,13 +291,13 @@ class ScreenshotTest {
     }
 
     /** A fake "Flexcil page": white, with one of the user's handwritten samples on it. */
-    private fun pageBitmap(): Bitmap {
+    private fun pageBitmap(height: Int = 1200): Bitmap {
         val sample = BitmapFactory.decodeStream(javaClass.getResourceAsStream("/samples/s02.jpg")!!)
-        val page = Bitmap.createBitmap(1920, 1200, Bitmap.Config.ARGB_8888)
+        val page = Bitmap.createBitmap(1920, height, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(page)
         c.drawColor(android.graphics.Color.WHITE)
         val rule = android.graphics.Paint().apply { color = 0xFFD8DEE8.toInt(); strokeWidth = 2f }
-        for (y in 140..1200 step 70) c.drawLine(0f, y.toFloat(), 1920f, y.toFloat(), rule)
+        for (y in 140..height step 70) c.drawLine(0f, y.toFloat(), 1920f, y.toFloat(), rule)
         c.drawBitmap(sample, null, android.graphics.Rect(200, 330, 200 + 860, 330 + 353), null)
         return page
     }
@@ -310,7 +322,7 @@ class ScreenshotTest {
     }
 
     /** What the user sees after the lasso: the live page, un-dimmed, with the card window on top of it. */
-    private fun floatingScene(fixture: String, minimized: Boolean, input: String = "2x^{2}+144=400"): @Composable () -> Unit = withKatex(fixture) {
+    private fun floatingScene(fixture: String, minimized: Boolean, input: String = "2x^{2}+144=400", pageHeight: Int = 1200): @Composable () -> Unit = withKatex(fixture) {
         val floating = remember {
             FloatingState().apply {
                 anchor = circleAnchor
@@ -326,7 +338,7 @@ class ScreenshotTest {
             }
         }
         Box(Modifier.fillMaxSize()) {
-            Image(pageBitmap().asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+            Image(pageBitmap(pageHeight).asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
             SolveOverlay(OverlayState(), floating, OverlayActions())
         }
     }

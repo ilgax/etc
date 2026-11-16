@@ -54,6 +54,8 @@ internal class Seg(val lo: Val?, val loClosed: Boolean, val hi: Val?, val hiClos
  * [Seg]s printed as `x \in (-\infty, -2) \cup [3, \infty)`.
  */
 internal class Inequalities(private val s: SolveSession) {
+    /** Name of the function in the sign chart row and caption; null: f(x). The derivative solver sets f'(x). */
+    var chartLabel: String? = null
     private class Linear(val v: Char, val op: String, val bound: Val?, val verdict: Boolean?, val set: List<Seg>)
 
     fun solve(line: ParsedLine): SolveResult {
@@ -273,9 +275,9 @@ internal class Inequalities(private val s: SolveSession) {
             row += sg(signs[i])
             if (i < crit.size) { header += crit[i].at.texOrDecimal(); row += if (crit[i].denZero) "\\times" else "0" }
         }
-        sb.append(v).append(" & ").append(header.joinToString(" & ")).append("\\\\ \\hline f(")
-        sb.append(v).append(") & ").append(row.joinToString(" & ")).append("\\end{array}")
-        step(sb.toString(), "Sign chart of f (× = not allowed)")
+        sb.append(v).append(" & ").append(header.joinToString(" & ")).append("\\\\ \\hline ").append(chartLabel ?: "f($v)")
+        sb.append(" & ").append(row.joinToString(" & ")).append("\\end{array}")
+        step(sb.toString(), "Sign chart of ${chartLabel ?: "f"} (× = not allowed)")
     }
 
     // ---------------------------------------------------------------- chains
