@@ -1,1 +1,0 @@
--keep class dev.ilgax.utils.math.ScreenshotUserService { public <init>(...); }

@@ -1,1 +1,0 @@
--keep class dev.ilgax.utils.core.shizuku.ShellUserService { public <init>(...); }
